@@ -15,11 +15,6 @@ df <- df %>% clean_names()
 df <- df %>% mutate(
   across(c(ngay_sinh, ngay_bc, ngay_kp, ngay_nv),
          ~ as.Date(.x, "%d/%m/%Y")))
-
-df <- df %>% mutate(
-  year = year(ngay_nv),
-  week = isoweek(ngay_nv)
-)
 ```
 
 ## 2. Epidemic trend
@@ -32,17 +27,6 @@ ggplot(df %>% filter(!is.na(ngay_nv)), aes(x = ngay_nv)) +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
-ggplot(df, aes(x = week)) +
-  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
-  facet_wrap(~ year, scales = "free") +
-  scale_x_continuous(breaks = seq(1, 52, 4)) +
-  scale_y_continuous(expand = c(0,0)) +
-  theme_classic() +
-  theme(strip.background = element_rect(fill = "grey")) +
-  labs(x = "Tuần", y = "Số ca")
-```
-
-```{r}
 ob1 <- df %>% filter(
   ngay_nv>="2018-08-27" & ngay_nv<="2020-04-30"
 )
@@ -50,7 +34,9 @@ ob1 <- df %>% filter(
 ob2 <- df %>% filter(
   ngay_nv>="2024-01-01"
 )
+```
 
+```{r}
 ob1 %>% ggplot(aes(x = ngay_nv)) +
   geom_histogram(binwidth = 1, fill = "steelblue") +
   scale_x_date(date_breaks = "1 week", date_labels = "%m/%Y") +
@@ -77,9 +63,8 @@ ob1 <- ob1 %>% mutate(
     TRUE ~ ngay_nv # Normal cases and Abnormal cases with diff_nvbc<0
   )
 )
-```
 
-```{r}
+
 ## Outbreak 2024-2025
 ob2 <- ob2 %>% mutate(
   diff_nvbc = as.numeric(ngay_bc - ngay_nv), 
@@ -94,5 +79,53 @@ ob2 <- ob2 %>% mutate(
     TRUE ~ ngay_bc-3
   )
 )
+
+
+## Combine 2 outbreak
+df <- bind_rows(ob1[,1:12], ob2[,1:12])
+
+df <- df %>% mutate(
+  year = year(ngay_kp),
+  week = isoweek(ngay_kp),
+  month = month(ngay_kp),
+  age = case_when(
+    year %in% 2018 ~ 2018 - year(ngay_sinh),
+    year %in% 2019 ~ 2019 - year(ngay_sinh),
+    year %in% 2020 ~ 2020 - year(ngay_sinh),
+    year %in% 2024 ~ 2024 - year(ngay_sinh),
+    year %in% 2025 ~ 2025 - year(ngay_sinh)
+  ),
+  gioi = case_when(
+    gioi %in% c("nam", "Nam", "NAM") ~ "Nam",
+    TRUE ~ "Nữ"
+  ),
+  pl_chan_doan = case_when(
+    pl_chan_doan %in% "Loại trừ sởi" ~ NA,
+    pl_chan_doan %in% "Sởi XĐ PTN" ~ "Phòng thí nghiệm",
+    pl_chan_doan %in% "Sởi nghi lâm sàng" ~ "Dịch tễ học",
+    TRUE ~ "Sởi"
+  ),
+  bien_chung = case_when(
+    bien_chung %in% c("Không", "KHÔNG", "không") ~ "Không",
+    is.na(bien_chung) ~ "Không xác định",
+    TRUE ~ "Có"
+  ),
+  tinh_trang = case_when(
+    tinh_trang %in% "Điều trị ngoại trú" ~ "Ngoại trú",
+    tinh_trang %in% "Điều trị nội trú" ~ "Nội trú",
+    TRUE ~ "Khác"
+  )
+) %>% 
+  rename(
+    birth = ngay_sinh,
+    sex = gioi,
+    diagnosis = pl_chan_doan,
+    complication = bien_chung,
+    status = tinh_trang,
+    onset = ngay_kp,
+    admission = ngay_nv,
+    report = ngay_bc
+  )
 ```
+
 
