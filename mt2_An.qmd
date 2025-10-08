@@ -1,0 +1,98 @@
+---
+title: "Mục tiêu 2"
+format: html
+---
+
+## 1. Import and process data
+
+```{r}
+df <- readxl::read_xlsx("data.xlsx",
+                        sheet = "SOI_2018-2025",
+                        col_types = rep("text", 12))
+
+df <- df %>% clean_names()
+
+df <- df %>% mutate(
+  across(c(ngay_sinh, ngay_bc, ngay_kp, ngay_nv),
+         ~ as.Date(.x, "%d/%m/%Y")))
+
+df <- df %>% mutate(
+  year = year(ngay_nv),
+  week = isoweek(ngay_nv)
+)
+```
+
+## 2. Epidemic trend
+
+```{r}
+ggplot(df %>% filter(!is.na(ngay_nv)), aes(x = ngay_nv)) +
+  geom_histogram(binwidth = 30, fill = "steelblue", color = "white") +
+  scale_x_date(date_breaks = "3 month", date_labels = "%m/%Y") +
+  scale_y_continuous(expand = c(0,0)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ggplot(df, aes(x = week)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "white") +
+  facet_wrap(~ year, scales = "free") +
+  scale_x_continuous(breaks = seq(1, 52, 4)) +
+  scale_y_continuous(expand = c(0,0)) +
+  theme_classic() +
+  theme(strip.background = element_rect(fill = "grey")) +
+  labs(x = "Tuần", y = "Số ca")
+```
+
+```{r}
+ob1 <- df %>% filter(
+  ngay_nv>="2018-08-27" & ngay_nv<="2020-04-30"
+)
+
+ob2 <- df %>% filter(
+  ngay_nv>="2024-01-01"
+)
+
+ob1 %>% ggplot(aes(x = ngay_nv)) +
+  geom_histogram(binwidth = 1, fill = "steelblue") +
+  scale_x_date(date_breaks = "1 week", date_labels = "%m/%Y") +
+  scale_y_continuous(expand = c(0,0)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+ob2 %>% ggplot(aes(x = ngay_nv)) +
+  geom_histogram(binwidth = 1, fill = "steelblue") +
+  scale_x_date(date_breaks = "1 week", date_labels = "%m/%Y") +
+  scale_y_continuous(expand = c(0,0)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+## Process Date Onset 
+
+```{r}
+## Outbreak 2018-2019
+ob1 <- ob1 %>% mutate(
+  diff_nvbc = as.numeric(ngay_bc - ngay_nv), #ngay_bc - ngay_nv
+  ngay_kp = case_when(
+    diff_nvbc > 30 ~ ngay_bc - 2, #Median of 0<=diff_nvbc<=30 is 2d (Abnormal cases)
+    TRUE ~ ngay_nv # Normal cases and Abnormal cases with diff_nvbc<0
+  )
+)
+```
+
+```{r}
+## Outbreak 2024-2025
+ob2 <- ob2 %>% mutate(
+  diff_nvbc = as.numeric(ngay_bc - ngay_nv), 
+  diff_kpnv = as.numeric(ngay_nv - ngay_kp),
+  diff_kpbc = as.numeric(ngay_bc - ngay_kp),
+  ngay_kp = case_when(
+    diff_kpnv>=0 & diff_kpnv<=6 ~ ngay_kp,
+    diff_kpnv<0 & diff_kpbc >= 0 & diff_kpbc <= 3 ~ ngay_kp,
+    diff_kpnv>6 & diff_kpbc >= 0 & diff_kpbc <= 3 ~ ngay_kp,
+    diff_kpnv>6 & diff_nvbc >= 0 & diff_nvbc ~ ngay_nv-2,
+    diff_nvbc<0 ~ ngay_nv,
+    TRUE ~ ngay_bc-3
+  )
+)
+```
+
