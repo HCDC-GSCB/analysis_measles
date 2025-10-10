@@ -128,16 +128,38 @@ ggplot(data = data_tuan_1819, aes(x = tuan, y = so_ca)) +
 
 peak_1819 <-  data_tuan_1819 %>% 
   slice_max(order_by = so_ca, n = 1)
-peak_1810
-
+print(peak_1819)
 
 # Số tuần Rt > 1
+
+
 # Số tuần Rt < 1 sau tiêm
+
+
 # Thời gian đợt dịch xảy ra
 # Tỷ lệ có biến chứng
 # Số ca mới mắc/100.000 dân theo quận/huyện
 
+df_1819_qh <- df_1819 %>% 
+  select(quan_huyen) %>% 
+  mutate(
+    quan_huyen = case_when(
+      quan_huyen %in% c("Quận 2", "Quận 9","Quận Thủ Đức")  ~ "Thành phố Thủ Đức",
+      TRUE ~ quan_huyen)
+    ) %>% 
+  group_by(quan_huyen) %>% # count(quan_huyen, name = "I)
+  summarise(so_ca = n()) %>% 
+  
+  # Dân số TpHCM 2019
+  mutate(dan_so = c(705508, 71526, 462047, 542243, 206837,
+                    142625, 234819, 209867, 620146, 190375,
+                    175329, 159073, 233561, 360155, 424667,
+                    499164, 784173, 676899, 163961, 474792,
+                    485348, 1013795)) %>% 
+  mutate(ti_le_100k = round((so_ca / dan_so) * 100000, 2))
 
+knitr::kable(df_1819_qh)
+  
 
 
 
