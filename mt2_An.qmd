@@ -26,37 +26,14 @@ ggplot(df %>% filter(!is.na(ngay_nv)), aes(x = ngay_nv)) +
   scale_y_continuous(expand = c(0,0)) +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
-
-ob1 <- df %>% filter(
-  ngay_nv>="2018-08-27" & ngay_nv<="2020-04-30"
-)
-
-ob2 <- df %>% filter(
-  ngay_nv>="2024-01-01"
-)
-```
-
-```{r}
-ob1 %>% ggplot(aes(x = ngay_nv)) +
-  geom_histogram(binwidth = 1, fill = "steelblue") +
-  scale_x_date(date_breaks = "1 week", date_labels = "%m/%Y") +
-  scale_y_continuous(expand = c(0,0)) +
-  theme_classic() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
-
-ob2 %>% ggplot(aes(x = ngay_nv)) +
-  geom_histogram(binwidth = 1, fill = "steelblue") +
-  scale_x_date(date_breaks = "1 week", date_labels = "%m/%Y") +
-  scale_y_continuous(expand = c(0,0)) +
-  theme_classic() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
 ## Process Date Onset 
 
 ```{r}
 ## Outbreak 2018-2019
-ob1 <- ob1 %>% mutate(
+ob1 <- df %>% filter(ngay_nv>="2018-08-27" & ngay_nv<="2020-04-30") %>%
+  mutate(
   diff_nvbc = as.numeric(ngay_bc - ngay_nv), #ngay_bc - ngay_nv
   ngay_kp = case_when(
     diff_nvbc > 30 ~ ngay_bc - 2, #Median of 0<=diff_nvbc<=30 is 2d (Abnormal cases)
@@ -66,17 +43,18 @@ ob1 <- ob1 %>% mutate(
 
 
 ## Outbreak 2024-2025
-ob2 <- ob2 %>% mutate(
+ob2 <- df %>% filter(ngay_nv>="2024-01-01") %>% 
+  mutate(
   diff_nvbc = as.numeric(ngay_bc - ngay_nv), 
   diff_kpnv = as.numeric(ngay_nv - ngay_kp),
   diff_kpbc = as.numeric(ngay_bc - ngay_kp),
   ngay_kp = case_when(
-    diff_kpnv>=0 & diff_kpnv<=6 ~ ngay_kp,
-    diff_kpnv<0 & diff_kpbc >= 0 & diff_kpbc <= 3 ~ ngay_kp,
-    diff_kpnv>6 & diff_kpbc >= 0 & diff_kpbc <= 3 ~ ngay_kp,
-    diff_kpnv>6 & diff_nvbc >= 0 & diff_nvbc ~ ngay_nv-2,
+    diff_kpnv>=0 & diff_kpnv<=7 ~ ngay_kp,
+    diff_kpnv<0 & diff_kpbc >= 0 & diff_kpbc <= 1 ~ ngay_kp,
+    diff_kpnv>7 & diff_kpbc >= 0 & diff_kpbc <= 1 ~ ngay_kp,
+    diff_kpnv>7 & diff_nvbc >= 0 & diff_nvbc <= 1 ~ ngay_nv,
     diff_nvbc<0 ~ ngay_nv,
-    TRUE ~ ngay_bc-3
+    TRUE ~ ngay_kp
   )
 )
 
@@ -122,10 +100,95 @@ df <- df %>% mutate(
     diagnosis = pl_chan_doan,
     complication = bien_chung,
     status = tinh_trang,
-    onset = ngay_kp,
+    dates = ngay_kp,
     admission = ngay_nv,
     report = ngay_bc
   )
+
+ob1 <- df %>% filter(dates>="2018-08-27" & dates<="2020-04-30")
+ob2 <- df %>% filter(dates>="2024-05-30")
 ```
 
+
+## Estimate Rt Ob2
+
+```{r}
+ob2_case <- ob2 %>% group_by(dates) %>% 
+  summarise(I = n())
+
+ob2_case <- ob2_case %>%
+    complete(dates = seq(min(dates), max(dates), by = "day")) %>%
+    replace_na(list(I = 0))
+
+t_start <- seq(2, nrow(ob2)-13)
+t_end <- t_start + 13
+
+mod <- estimate_R(
+  incid = ob2_case, 
+  method = "parametric_si", 
+  config = make_config(
+    list(
+      mean_si = 14.5, # Y văn
+      std_si = 3.25, # Y văn
+      t_start = t_start,
+      t_end = t_end
+    )
+  )
+)
+
+df_rt_ob2 <- process_data(mod)
+
+df_rt_ob2 <- df_rt_ob2 %>% 
+     arrange(dates) %>% 
+     mutate(id = consecutive_id(pl))
+```
+
+### Biểu đồ Rt gộp với số ca của đợt dịch 2
+
+```{r}
+start_date <- as.Date("2024-07-01")
+end_date   <- as.Date("2025-03-31")
+
+df_rt_ob2$dates <- as.Date(df_rt_ob2$dates)
+ob2_case$dates   <- as.Date(ob2_case$dates)
+
+## Scale số ca để vẽ 2 trục y
+max_I <- max(ob2_case$I[ob2_case$dates >= start_date & ob2_case$dates <= end_date], na.rm = TRUE)
+k <- ifelse(max_I > 0, max_I / 3, 1)
+
+
+ggplot() +
+    geom_col(
+        data = ob2_case %>% filter(dates >= start_date & dates <= end_date),
+        aes(x = dates, y = I / k),
+        fill = "steelblue", alpha = 0.35
+    ) +
+  geom_line(
+        data = df_rt_ob2 %>% filter(dates >= start_date & dates <= end_date),
+        aes(x = dates, y = rt),
+        color = "darkred", size = 1
+    ) +
+    geom_ribbon(
+        data = df_rt_ob2 %>% filter(dates >= start_date & dates <= end_date),
+        aes(x = dates, ymin = q1_rt, ymax = q3_rt),
+        fill = "darkred", alpha = 0.18, color = NA
+    ) +
+    geom_hline(yintercept = 1, linetype = "dashed") +
+    scale_y_continuous(
+        name = expression(R[t]),
+        limits = c(0, 3),
+        breaks = seq(0, 3, 0.5),
+        sec.axis = sec_axis(~ . * k, name = "Số ca")
+    ) +
+    scale_x_date(
+        limits = c(start_date, end_date),
+        date_labels = "%b-%Y",
+        date_breaks = "1 month",
+        name = "Ngày khởi phát"
+    ) +
+    theme_classic(base_size = 13) +
+    theme(
+        axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+```
 
