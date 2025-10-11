@@ -28,22 +28,18 @@ ggplot(df %>% filter(!is.na(ngay_nv)), aes(x = ngay_nv)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
 
-## Process Date Onset 
+## 3. Process Date Onset 
 
 ```{r}
 ## Outbreak 2018-2019
 ob1 <- df %>% filter(ngay_nv>="2018-08-27" & ngay_nv<="2020-04-30") %>%
   mutate(
-  diff_nvbc = as.numeric(ngay_bc - ngay_nv), #ngay_bc - ngay_nv
-  ngay_kp = case_when(
-    diff_nvbc > 30 ~ ngay_bc - 2, #Median of 0<=diff_nvbc<=30 is 2d (Abnormal cases)
-    TRUE ~ ngay_nv # Normal cases and Abnormal cases with diff_nvbc<0
-  )
+  ngay_kp = ngay_nv
 )
 
 
 ## Outbreak 2024-2025
-ob2 <- df %>% filter(ngay_nv>="2024-01-01") %>% 
+ob2 <- df %>% filter(ngay_kp>="2024-01-01") %>% 
   mutate(
   diff_nvbc = as.numeric(ngay_bc - ngay_nv), 
   diff_kpnv = as.numeric(ngay_nv - ngay_kp),
@@ -66,13 +62,7 @@ df <- df %>% mutate(
   year = year(ngay_kp),
   week = isoweek(ngay_kp),
   month = month(ngay_kp),
-  age = case_when(
-    year %in% 2018 ~ 2018 - year(ngay_sinh),
-    year %in% 2019 ~ 2019 - year(ngay_sinh),
-    year %in% 2020 ~ 2020 - year(ngay_sinh),
-    year %in% 2024 ~ 2024 - year(ngay_sinh),
-    year %in% 2025 ~ 2025 - year(ngay_sinh)
-  ),
+  age = as.numeric(year(ngay_kp)-year),
   gioi = case_when(
     gioi %in% c("nam", "Nam", "NAM") ~ "Nam",
     TRUE ~ "Nữ"
@@ -105,22 +95,112 @@ df <- df %>% mutate(
     report = ngay_bc
   )
 
-ob1 <- df %>% filter(dates>="2018-08-27" & dates<="2020-04-30")
-ob2 <- df %>% filter(dates>="2024-05-30")
+df <- df %>% mutate(
+  episode = case_when(
+    year(dates) %in% c("2018","2019","2020") ~ 1,
+    TRUE ~ 2
+  )
+)
 ```
 
-
-## Estimate Rt Ob2
+## 4. Esstimate Rt of Ob1
 
 ```{r}
-ob2_case <- ob2 %>% group_by(dates) %>% 
+ob1_case <- df %>% 
+  filter(dates>="2018-08-27" & dates<="2020-04-30") %>% 
+  group_by(dates) %>% 
+  summarise(I = n())
+
+ob1_case <- ob1_case %>%
+    complete(dates = seq(min(dates), max(dates), by = "day")) %>%
+    replace_na(list(I = 0))
+
+t_start <- seq(2, nrow(ob1_case)-13)
+t_end <- t_start + 13
+
+mod <- estimate_R(
+  incid = ob1_case, 
+  method = "parametric_si", 
+  config = make_config(
+    list(
+      mean_si = 14.5, # Y văn
+      std_si = 3.25, # Y văn
+      t_start = t_start,
+      t_end = t_end
+    )
+  )
+)
+
+df_rt_ob1 <- process_data(mod)
+
+df_rt_ob1 <- df_rt_ob1 %>% 
+     arrange(dates) %>% 
+     mutate(id = consecutive_id(pl))
+```
+
+### Biểu đồ Rt gộp với số ca của đợt dịch 1
+
+```{r}
+start_date <- as.Date("2018-10-01")
+end_date   <- as.Date("2020-05-01")
+
+df_rt_ob1$dates <- as.Date(df_rt_ob1$dates)
+ob1_case$dates   <- as.Date(ob1_case$dates)
+
+## Scale số ca để vẽ 2 trục y
+max_I <- max(ob1_case$I[ob1_case$dates >= start_date & ob1_case$dates <= end_date], na.rm = TRUE)
+k <- ifelse(max_I > 0, max_I / 3, 1)
+
+
+ggplot() +
+    geom_col(
+        data = ob1_case %>% filter(dates >= start_date & dates <= end_date),
+        aes(x = dates, y = I / k),
+        fill = "steelblue", alpha = 0.35
+    ) +
+  geom_line(
+        data = df_rt_ob1 %>% filter(dates >= start_date & dates <= end_date),
+        aes(x = dates, y = rt),
+        color = "darkred", size = 1
+    ) +
+    geom_ribbon(
+        data = df_rt_ob1 %>% filter(dates >= start_date & dates <= end_date),
+        aes(x = dates, ymin = q1_rt, ymax = q3_rt),
+        fill = "darkred", alpha = 0.18, color = NA
+    ) +
+    geom_hline(yintercept = 1, linetype = "dashed") +
+    scale_y_continuous(
+        name = expression(R[t]),
+        limits = c(0, 3),
+        breaks = seq(0, 3, 0.5),
+        expand = c(0,0),
+        sec.axis = sec_axis(~ . * k, name = "Số ca")
+    ) +
+    scale_x_date(
+        limits = c(start_date, end_date),
+        date_labels = "%b-%Y",
+        date_breaks = "1 month",
+        name = "Ngày khởi phát"
+    ) +
+    theme_classic(base_size = 13) +
+    theme(
+        axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+```
+
+## 5. Estimate Rt of Ob2
+
+```{r}
+ob2_case <- df %>% 
+  filter(dates>="2024-05-27") %>% 
+  group_by(dates) %>% 
   summarise(I = n())
 
 ob2_case <- ob2_case %>%
     complete(dates = seq(min(dates), max(dates), by = "day")) %>%
     replace_na(list(I = 0))
 
-t_start <- seq(2, nrow(ob2)-13)
+t_start <- seq(2, nrow(ob2_case)-13)
 t_end <- t_start + 13
 
 mod <- estimate_R(
@@ -178,6 +258,7 @@ ggplot() +
         name = expression(R[t]),
         limits = c(0, 3),
         breaks = seq(0, 3, 0.5),
+        expand = c(0,0),
         sec.axis = sec_axis(~ . * k, name = "Số ca")
     ) +
     scale_x_date(
@@ -190,5 +271,40 @@ ggplot() +
     theme(
         axis.text.x = element_text(angle = 45, hjust = 1)
     )
+```
+
+## 6. So sánh giữa 2 đợt dịch
+
+### Rt
+
+```{r}
+df_rt %>% 
+  tbl_summary(by=episode, 
+              include = c(rt, q1_rt, q3_rt, pct)) %>%
+  add_p()
+```
+
+### Các chỉ số khác
+
+```{r}
+df <- df %>%
+  mutate(
+    sex = as.factor(sex),
+    status = as.factor(status),
+    episode = as.factor(episode)
+  )
+
+df %>% 
+  tbl_summary(
+  by = episode,
+  include = c(age, sex, status),
+  statistic = list(
+    all_continuous() ~ "{mean} ± {sd}",
+    all_categorical() ~ "{n} ({p}%)"
+  )
+) %>%
+  add_p() %>%
+  modify_header(label ~ "**Biến số**") %>%
+  modify_caption("**Bảng 1. So sánh đặc điểm dịch tễ giữa hai đợt dịch Sởi**")
 ```
 
