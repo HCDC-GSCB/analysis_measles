@@ -62,7 +62,16 @@ df <- df %>% mutate(
   year = year(ngay_kp),
   week = isoweek(ngay_kp),
   month = month(ngay_kp),
-  age = as.numeric(year(ngay_kp)-year),
+  age_interval = interval(ngay_sinh, ngay_kp),
+  age_month = age_interval %/% months(1),
+  age_group = case_when(
+      age_month < 12 ~ "<1 tuổi",
+      age_month <= 60 ~ "1-5 tuổi",     
+      age_month <= 120 ~ "6-10 tuổi",
+      age_month <= 180 ~ "10-15 tuổi",
+      TRUE              ~ ">15 tuổi"
+    ),
+  age_group = factor(age_group, levels = c("<1 tuổi", "1-5 tuổi", "6-10 tuổi", "10-15 tuổi", ">15 tuổi")),
   gioi = case_when(
     gioi %in% c("nam", "Nam", "NAM") ~ "Nam",
     TRUE ~ "Nữ"
@@ -107,7 +116,7 @@ df <- df %>% mutate(
 
 ```{r}
 ob1_case <- df %>% 
-  filter(dates>="2018-08-27" & dates<="2020-04-30") %>% 
+  filter(dates>="2018-09-09" & dates<="2020-03-31") %>% 
   group_by(dates) %>% 
   summarise(I = n())
 
@@ -278,9 +287,15 @@ ggplot() +
 ### Rt
 
 ```{r}
-df_rt %>% 
+df_rt_ob1$episode <- 1
+df_rt_ob2$episode <- 2
+df_rt <- bind_rows(df_rt_ob1, df_rt_ob2)
+
+tbl1 <- df_rt %>% 
+  mutate(episode = as.factor(episode),
+        pl = factor(pl, levels = c("xanh", "vang", "cam", "do", "tim"))) %>% 
   tbl_summary(by=episode, 
-              include = c(rt, q1_rt, q3_rt, pct)) %>%
+              include = c(rt, q1_rt, q3_rt, pl)) %>%
   add_p()
 ```
 
@@ -294,17 +309,57 @@ df <- df %>%
     episode = as.factor(episode)
   )
 
-df %>% 
+df <- df %>% filter(
+  year(birth) != 1905
+)
+
+tbl2 <- df %>% 
   tbl_summary(
   by = episode,
-  include = c(age, sex, status),
+  include = c(age_month, age_group, sex, status),
   statistic = list(
-    all_continuous() ~ "{mean} ± {sd}",
+    all_continuous() ~ "{median} ({p25}-{p75})",
     all_categorical() ~ "{n} ({p}%)"
   )
 ) %>%
-  add_p() %>%
-  modify_header(label ~ "**Biến số**") %>%
-  modify_caption("**Bảng 1. So sánh đặc điểm dịch tễ giữa hai đợt dịch Sởi**")
+  add_p()
 ```
+
+```{r}
+tbl_stack(list(tbl1, tbl2))
+```
+
+## 7. Phân tích trong mỗi đợt dịch
+
+### Rt
+
+```{r}
+##### Phân tầng theo nhóm tuổi
+ob1_rt_agegr <- calc_rt_grouped(df,
+                                group_var = age_group,
+                                date_range = c("2018-09-09", "2020-03-31"))
+
+tbl1 <- ob1_rt_agegr %>% 
+  mutate(group = factor(group, levels = c("<1 tuổi", "1-5 tuổi", "6-10 tuổi", "10-15 tuổi", ">15 tuổi")),
+        pl = factor(pl, levels = c("xanh", "vang", "cam", "do", "tim"))) %>% 
+  tbl_summary(by=group, 
+              include = c(rt, q1_rt, q3_rt, pl),
+              missing = "no") %>%
+  add_p()
+
+ob2_rt_agegr <- calc_rt_grouped(df,
+                                group_var = age_group,
+                                date_range = c("2024-05-31", "2025-03-31"))
+
+tbl2 <- ob2_rt_agegr %>% 
+  mutate(group = factor(group, levels = c("<1 tuổi", "1-5 tuổi", "6-10 tuổi", "10-15 tuổi", ">15 tuổi")),
+        pl = factor(pl, levels = c("xanh", "vang", "cam", "do", "tim"))) %>% 
+  tbl_summary(by=group, 
+              include = c(rt, q1_rt, q3_rt, pl),
+              missing = "no") %>%
+  add_p()
+
+tbl_merge(list(tbl1, tbl2), tab_spanner = c("Đợt dịch 1", "Đợt dịch 2"))
+```
+
 
