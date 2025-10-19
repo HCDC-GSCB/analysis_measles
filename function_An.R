@@ -6,8 +6,25 @@ library(gtsummary)
 library(janitor)
 library(EpiEstim)
 library(purrr)
+library(tibble)
 
-## 
+## Import excel data
+convert_excel_mixed_date <- function(x) {
+  x <- trimws(x)
+  is_num <- suppressWarnings(!is.na(as.numeric(x)))
+  
+  result <- rep(NA, length(x))
+  
+  result[is_num] <- as.Date(as.numeric(x[is_num]), origin = "1899-12-30")
+  
+  result[!is_num] <- suppressWarnings(dmy(x[!is_num]))
+  
+  result <- as.Date(result, origin = "1970-01-01")
+  
+  return(result)
+}
+
+## Calculate pct of Rt
 process_data <- function(mod_data) {
   df_rt <- mod_data$R %>%
     mutate(
@@ -32,12 +49,6 @@ process_data <- function(mod_data) {
 
 
 ## Estimate_R() cho Age Group và Vaccinate
-
-library(dplyr)
-library(purrr)
-library(EpiEstim)
-library(tibble)
-
 calc_rt_grouped <- function(data, group_var, 
                             date_col = "dates",
                             date_range = c("2018-08-27", "2020-04-30"),

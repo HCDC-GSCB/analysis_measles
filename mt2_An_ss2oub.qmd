@@ -1,16 +1,21 @@
 ---
-title: "Mục tiêu 2"
+title: "Mục tiêu 2 - So sánh giữa 2 đợt dịch"
 format: html
 ---
 
 ## 1. Import and process data
 
 ```{r}
-df <- readxl::read_xlsx("data.xlsx",
-                        sheet = "SOI_2018-2025",
-                        col_types = rep("text", 12))
+#| warning: false
+#| message: false
+
+date_cols <- c("ngay_sinh", "ngay_kp", "ngay_nv", "ngay_bc")
+
+df <- readxl::read_xlsx("data.xlsx", sheet = "data", col_types = "text")
 
 df <- df %>% clean_names()
+
+df[date_cols] <- lapply(df[date_cols], convert_excel_mixed_date)
 
 df <- df %>% mutate(
   across(c(ngay_sinh, ngay_bc, ngay_kp, ngay_nv),
@@ -44,19 +49,12 @@ ob2 <- df %>% filter(ngay_kp>="2024-01-01") %>%
   diff_nvbc = as.numeric(ngay_bc - ngay_nv), 
   diff_kpnv = as.numeric(ngay_nv - ngay_kp),
   diff_kpbc = as.numeric(ngay_bc - ngay_kp),
-  ngay_kp = case_when(
-    diff_kpnv>=0 & diff_kpnv<=7 ~ ngay_kp,
-    diff_kpnv<0 & diff_kpbc >= 0 & diff_kpbc <= 1 ~ ngay_kp,
-    diff_kpnv>7 & diff_kpbc >= 0 & diff_kpbc <= 1 ~ ngay_kp,
-    diff_kpnv>7 & diff_nvbc >= 0 & diff_nvbc <= 1 ~ ngay_nv,
-    diff_nvbc<0 ~ ngay_nv,
-    TRUE ~ ngay_kp
+  ngay_kp = ngay_nv
   )
-)
 
 
 ## Combine 2 outbreak
-df <- bind_rows(ob1[,1:12], ob2[,1:12])
+df <- bind_rows(ob1[,1:15], ob2[,1:15])
 
 df <- df %>% mutate(
   year = year(ngay_kp),
@@ -101,7 +99,9 @@ df <- df %>% mutate(
     status = tinh_trang,
     dates = ngay_kp,
     admission = ngay_nv,
-    report = ngay_bc
+    report = ngay_bc,
+    vaccine_status = x0_tiemchung,
+    vaccine_episode = x0_lantc
   )
 
 df <- df %>% mutate(
@@ -316,7 +316,9 @@ df <- df %>% filter(
 tbl2 <- df %>% 
   tbl_summary(
   by = episode,
-  include = c(age_month, age_group, sex, status),
+  include = c(age_month, age_group, sex, status, vaccine_status,
+              vaccine_episode),
+  missing = "no",
   statistic = list(
     all_continuous() ~ "{median} ({p25}-{p75})",
     all_categorical() ~ "{n} ({p}%)"
