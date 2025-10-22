@@ -53,10 +53,6 @@ process_data <- function(mod_data) {
 
 ## Estimate_R() cho Age Group và Vaccinate
 
-library(dplyr)
-library(purrr)
-library(EpiEstim)
-library(tibble)
 
 calc_rt_grouped <- function(data, group_var, 
                             date_col = "dates",
