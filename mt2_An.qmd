@@ -6,15 +6,17 @@ format: html
 ## 1. Import and process data
 
 ```{r}
-df <- readxl::read_xlsx("data.xlsx",
-                        sheet = "SOI_2018-2025",
-                        col_types = rep("text", 12))
+#| warning: false
+#| message: false
+df <- readxl::read_xlsx("data_goc.xlsx",
+                        sheet = "data",
+                        col_types = "text")
 
 df <- df %>% clean_names()
 
-df <- df %>% mutate(
-  across(c(ngay_sinh, ngay_bc, ngay_kp, ngay_nv),
-         ~ as.Date(.x, "%d/%m/%Y")))
+date_cols <- c("ngay_sinh", "ngay_kp", "ngay_nv", "ngay_bc")
+
+df[date_cols] <- lapply(df[date_cols], convert_excel_mixed_date)
 ```
 
 ## 2. Epidemic trend
@@ -31,45 +33,15 @@ ggplot(df %>% filter(!is.na(ngay_nv)), aes(x = ngay_nv)) +
 ## 3. Process Date Onset 
 
 ```{r}
-## Outbreak 2018-2019
-ob1 <- df %>% filter(ngay_nv>="2018-08-27" & ngay_nv<="2020-04-30") %>%
-  mutate(
-  ngay_kp = ngay_nv
-)
-
-
-## Outbreak 2024-2025
-ob2 <- df %>% filter(ngay_kp>="2024-01-01") %>% 
-  mutate(
-  diff_nvbc = as.numeric(ngay_bc - ngay_nv), 
-  diff_kpnv = as.numeric(ngay_nv - ngay_kp),
-  diff_kpbc = as.numeric(ngay_bc - ngay_kp),
-  ngay_kp = case_when(
-    diff_kpnv>=0 & diff_kpnv<=7 ~ ngay_kp,
-    diff_kpnv<0 & diff_kpbc >= 0 & diff_kpbc <= 1 ~ ngay_kp,
-    diff_kpnv>7 & diff_kpbc >= 0 & diff_kpbc <= 1 ~ ngay_kp,
-    diff_kpnv>7 & diff_nvbc >= 0 & diff_nvbc <= 1 ~ ngay_nv,
-    diff_nvbc<0 ~ ngay_nv,
-    TRUE ~ ngay_kp
-  )
-)
-
-
-## Combine 2 outbreak
-df <- bind_rows(ob1[,1:12], ob2[,1:12])
-
 df <- df %>% mutate(
-  year = year(ngay_kp),
-  week = isoweek(ngay_kp),
-  month = month(ngay_kp),
-  age_interval = interval(ngay_sinh, ngay_kp),
+  age_interval = interval(ngay_sinh, ngay_nv),
   age_month = age_interval %/% months(1),
   age_group = case_when(
-      age_month < 12 ~ "<1 tuổi",
-      age_month <= 60 ~ "1-5 tuổi",     
-      age_month <= 120 ~ "6-10 tuổi",
-      age_month <= 180 ~ "10-15 tuổi",
-      TRUE              ~ ">15 tuổi"
+      age_month<12 ~ "<1 tuổi",
+      age_month>=12 & age_month<=60 ~ "1-5 tuổi",     
+      age_month>60 & age_month<=120 ~ "6-10 tuổi",
+      age_month>120 & age_month<=180 ~ "10-15 tuổi",
+      TRUE ~ ">15 tuổi"
     ),
   age_group = factor(age_group, levels = c("<1 tuổi", "1-5 tuổi", "6-10 tuổi", "10-15 tuổi", ">15 tuổi")),
   gioi = case_when(
@@ -90,7 +62,13 @@ df <- df %>% mutate(
   tinh_trang = case_when(
     tinh_trang %in% "Điều trị ngoại trú" ~ "Ngoại trú",
     tinh_trang %in% "Điều trị nội trú" ~ "Nội trú",
+    is.na(tinh_trang) ~ NA,
     TRUE ~ "Khác"
+  ),
+  x0_lantc = case_when(
+    x0_lantc == 0 ~ "Không",
+    is.na(x0_lantc) ~ "Không rõ",
+    TRUE ~ "Có"
   )
 ) %>% 
   rename(
@@ -99,12 +77,55 @@ df <- df %>% mutate(
     diagnosis = pl_chan_doan,
     complication = bien_chung,
     status = tinh_trang,
+    vaccination = x0_lantc,
     dates = ngay_kp,
     admission = ngay_nv,
     report = ngay_bc
   )
 
+df <- df[!(df$admission >= as.Date("2024-01-01") & is.na(df$diagnosis)), ]
+
 df <- df %>% mutate(
+  quan_huyen = case_when(
+    quan_huyen %in% c("Thủ Đức", "Quận 9", "Quận 2", 
+                      "QUẬN 9","THỦ ĐỨC","Quận Thủ Đức" ) ~ "Thành phố Thủ Đức",
+    quan_huyen %in% c("BÌNH CHÁNH", "Huyện Bình Chánh") ~ "Bình Chánh",
+    quan_huyen %in% c("BÌNH TÂN", "Quận Bình Tân" ) ~ "Bình Tân",
+    quan_huyen %in% c("QUẬN 11") ~ "Quận 11",
+    quan_huyen %in% c("QUẬN 12") ~ "Quận 12",
+    quan_huyen %in% c("QUẬN 10") ~ "Quận 10",
+    quan_huyen %in% c("QUẬN 7") ~ "Quận 7",
+    quan_huyen %in% c("CỦ CHI", "Huyện Củ Chi") ~ "Củ Chi",
+    quan_huyen %in% c("GÒ VẤP", "Quận Gò vấp","Gò vấp") ~ "Gò Vấp",
+    quan_huyen %in% c("HÓC MÔN", "Huyện Hóc Môn") ~ "Hóc Môn",
+    quan_huyen %in% c("QUẬN 3") ~ "Quận 3",
+    quan_huyen %in% c("QUẬN 7") ~ "Quận 7",
+    quan_huyen %in% c("TÂN BÌNH", "Quận Tân Bình") ~ "Tân Bình",
+    quan_huyen %in% c("TÂN PHÚ","Quận Tân Phú") ~ "Tân Phú",
+    quan_huyen %in% c("Quận Bình Thạnh",  "BÌNH THẠNH" ) ~ "Bình Thạnh",
+    quan_huyen %in% c( "Quận Phú Nhuận","PHÚ NHUẬN"  ) ~ "Phú Nhuận",
+    quan_huyen %in% c( "Huyện Nhà Bè", "NHÀ BÈ" ) ~ "Nhà Bè",
+    quan_huyen %in% c( "QUẬN 6") ~ "Quận 6",
+    quan_huyen %in% c( "Huyện Cần Giờ") ~ "Cần Giờ",
+    quan_huyen %in% c( "QUẬN 1" ) ~ "Quận 1",
+    TRUE ~ quan_huyen
+  ))
+
+#Danh sách các ca thuộc 22 QH
+qh_list <- c(
+  "Quận 1", "Quận 3", "Quận 4", "Quận 5", "Quận 6", 
+  "Quận 7", "Quận 8", "Quận 10", "Quận 11", "Quận 12",
+  "Bình Thạnh", "Gò Vấp", "Phú Nhuận", "Tân Bình", 
+  "Tân Phú", "Bình Tân","Thành phố Thủ Đức","Bình Chánh",
+  "Hóc Môn", "Củ Chi", "Nhà Bè", "Cần Giờ")
+  
+df <- df %>%
+  filter(quan_huyen %in% qh_list)
+
+df <- distinct(df)
+
+df <- df %>% mutate(
+  dates = admission,
   episode = case_when(
     year(dates) %in% c("2018","2019","2020") ~ 1,
     TRUE ~ 2
@@ -116,19 +137,25 @@ df <- df %>% mutate(
 
 ```{r}
 ob1_case <- df %>% 
-  filter(dates>="2018-09-09" & dates<="2020-03-31") %>% 
+  filter(dates>="2018-01-01" & dates<="2020-03-31") %>%
   group_by(dates) %>% 
   summarise(I = n())
 
-ob1_case <- ob1_case %>%
+ob1_rt <- df %>% 
+  filter(dates>="2018-08-27" & dates<="2020-03-31") %>% 
+  # 27/08/2018 là ngày bắt đầu, trong 14 ngày có đủ 12 ca
+  group_by(dates) %>% 
+  summarise(I = n())
+
+ob1_rt <- ob1_rt %>%
     complete(dates = seq(min(dates), max(dates), by = "day")) %>%
     replace_na(list(I = 0))
 
-t_start <- seq(2, nrow(ob1_case)-13)
+t_start <- seq(2, nrow(ob1_rt)-13)
 t_end <- t_start + 13
 
 mod <- estimate_R(
-  incid = ob1_case, 
+  incid = ob1_rt, 
   method = "parametric_si", 
   config = make_config(
     list(
@@ -150,8 +177,8 @@ df_rt_ob1 <- df_rt_ob1 %>%
 ### Biểu đồ Rt gộp với số ca của đợt dịch 1
 
 ```{r}
-start_date <- as.Date("2018-10-01")
-end_date   <- as.Date("2020-05-01")
+start_date <- as.Date("2018-01-01")
+end_date   <- as.Date("2020-03-31")
 
 df_rt_ob1$dates <- as.Date(df_rt_ob1$dates)
 ob1_case$dates   <- as.Date(ob1_case$dates)
@@ -187,8 +214,8 @@ ggplot() +
     ) +
     scale_x_date(
         limits = c(start_date, end_date),
-        date_labels = "%b-%Y",
-        date_breaks = "1 month",
+        date_labels = "%m/%Y",
+        date_breaks = "3 month",
         name = "Ngày khởi phát"
     ) +
     theme_classic(base_size = 13) +
@@ -201,19 +228,24 @@ ggplot() +
 
 ```{r}
 ob2_case <- df %>% 
+  filter(dates>="2024-01-01") %>%
+  group_by(dates) %>% 
+  summarise(I = n())
+
+ob2_rt <- df %>% 
   filter(dates>="2024-05-27") %>% 
   group_by(dates) %>% 
   summarise(I = n())
 
-ob2_case <- ob2_case %>%
+ob2_rt <- ob2_rt %>%
     complete(dates = seq(min(dates), max(dates), by = "day")) %>%
     replace_na(list(I = 0))
 
-t_start <- seq(2, nrow(ob2_case)-13)
+t_start <- seq(2, nrow(ob2_rt)-13)
 t_end <- t_start + 13
 
 mod <- estimate_R(
-  incid = ob2_case, 
+  incid = ob2_rt, 
   method = "parametric_si", 
   config = make_config(
     list(
@@ -235,7 +267,7 @@ df_rt_ob2 <- df_rt_ob2 %>%
 ### Biểu đồ Rt gộp với số ca của đợt dịch 2
 
 ```{r}
-start_date <- as.Date("2024-07-01")
+start_date <- as.Date("2024-01-01")
 end_date   <- as.Date("2025-03-31")
 
 df_rt_ob2$dates <- as.Date(df_rt_ob2$dates)
@@ -291,7 +323,7 @@ df_rt_ob1$episode <- 1
 df_rt_ob2$episode <- 2
 df_rt <- bind_rows(df_rt_ob1, df_rt_ob2)
 
-tbl1 <- df_rt %>% 
+df_rt %>% 
   mutate(episode = as.factor(episode),
         pl = factor(pl, levels = c("xanh", "vang", "cam", "do", "tim"))) %>% 
   tbl_summary(by=episode, 
@@ -306,60 +338,137 @@ df <- df %>%
   mutate(
     sex = as.factor(sex),
     status = as.factor(status),
-    episode = as.factor(episode)
+    episode = as.factor(episode),
+    vaccination = as.factor(vaccination)
   )
 
 df <- df %>% filter(
-  year(birth) != 1905
+  age_month < 1200
 )
 
-tbl2 <- df %>% 
+df %>% 
   tbl_summary(
   by = episode,
-  include = c(age_month, age_group, sex, status),
+  include = c(age_month, age_group, sex, 
+              status, vaccination),
   statistic = list(
     all_continuous() ~ "{median} ({p25}-{p75})",
     all_categorical() ~ "{n} ({p}%)"
   )
 ) %>%
   add_p()
+
+pop <- readxl::read_xlsx("pop.xlsx")
+
+cases_summary <- df %>%
+  group_by(quan_huyen, episode) %>%
+  summarise(cases = n(), .groups = "drop") %>%
+  left_join(pop, by = "quan_huyen") %>%
+  mutate(population = case_when(
+    episode == 1 ~ pop_2019,
+    episode == 2 ~ pop_2024,
+    TRUE ~ NA_real_
+  ),
+  rate_per_100k = (cases / population) * 100000)
+
+cases_summary %>%
+  tbl_summary(
+    by = episode,
+    include = c(cases, population, rate_per_100k),
+    statistic = list(all_continuous() ~ "{median} ({p25}-{p75})"),
+    digits = all_continuous() ~ 1,
+    missing = "no"
+  ) %>%
+  add_p()
+
+ggplot(cases_summary,
+       aes(y = reorder(quan_huyen, rate_per_100k),
+           x = rate_per_100k,
+           fill = factor(episode))) +
+    geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+    geom_text(aes(label = round(rate_per_100k, 1)),
+              position = position_dodge(width = 0.8),
+              hjust = -0.2, size = 3.3) +
+    scale_fill_manual(
+        values = c("1" = "#FB6A4A", "2" = "#00C0C7"),
+        labels = c("2018-2019", "2024-2025"),
+        name = "Outbreak"
+    )+
+    labs(
+        x = "Số ca trên 100.000 dân",
+        y = "",
+        caption = "(p > 0.05)"
+    ) +
+    scale_x_continuous(expand = c(0,0),
+                       limits = c(0,180),
+                       breaks = seq(0,180,30)) +
+    theme_bw(base_size = 13) +
+    theme(
+        legend.position = "bottom",
+        strip.text = element_text(face = "bold"),
+        axis.text.y = element_text(size = 11)
+    ) +
+    coord_cartesian(clip = "off") 
 ```
 
 ```{r}
-tbl_stack(list(tbl1, tbl2))
+cols_ep <- c("1" = "#9370DB",
+             "2" = "#FFD166") 
+
+ggplot(df, aes(x = age_group, fill = factor(episode))) +
+  geom_density(alpha = 0.6, position = "identity") +
+  scale_fill_manual(values = cols_ep,
+                    labels = c("2018-2020", "2024-2025"),
+                    name = "Outbreak") +
+  labs(x = "Age group", y = "Density") +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
 ```
 
 ## 7. Phân tích trong mỗi đợt dịch
 
-### Rt
+### Đợt dịch 2018-2019
 
 ```{r}
-##### Phân tầng theo nhóm tuổi
-ob1_rt_agegr <- calc_rt_grouped(df,
-                                group_var = age_group,
-                                date_range = c("2018-09-09", "2020-03-31"))
-
-tbl1 <- ob1_rt_agegr %>% 
-  mutate(group = factor(group, levels = c("<1 tuổi", "1-5 tuổi", "6-10 tuổi", "10-15 tuổi", ">15 tuổi")),
-        pl = factor(pl, levels = c("xanh", "vang", "cam", "do", "tim"))) %>% 
-  tbl_summary(by=group, 
-              include = c(rt, q1_rt, q3_rt, pl),
-              missing = "no") %>%
+df %>% filter(episode==1) %>% 
+  tbl_summary(by = age_group,
+              include = c(sex, status, vaccination),
+              statistic = list(
+    all_continuous() ~ "{median} ({p25}-{p75})",
+    all_categorical() ~ "{n} ({p}%)")) %>% 
+  add_overall() %>% 
   add_p()
 
-ob2_rt_agegr <- calc_rt_grouped(df,
-                                group_var = age_group,
-                                date_range = c("2024-05-31", "2025-03-31"))
-
-tbl2 <- ob2_rt_agegr %>% 
-  mutate(group = factor(group, levels = c("<1 tuổi", "1-5 tuổi", "6-10 tuổi", "10-15 tuổi", ">15 tuổi")),
-        pl = factor(pl, levels = c("xanh", "vang", "cam", "do", "tim"))) %>% 
-  tbl_summary(by=group, 
-              include = c(rt, q1_rt, q3_rt, pl),
-              missing = "no") %>%
+df %>% filter(episode==1) %>% 
+  tbl_summary(by = vaccination,
+              include = c(sex, status,
+                          age_month, age_group),
+              statistic = list(
+    all_continuous() ~ "{median} ({p25}-{p75})",
+    all_categorical() ~ "{n} ({p}%)")) %>% 
+  add_overall() %>% 
   add_p()
-
-tbl_merge(list(tbl1, tbl2), tab_spanner = c("Đợt dịch 1", "Đợt dịch 2"))
 ```
 
+### Đợt dịch 20224-2025
 
+```{r}
+df %>% filter(episode==2) %>% 
+  tbl_summary(by = age_group,
+              include = c(sex, status, vaccination),
+              statistic = list(
+    all_continuous() ~ "{median} ({p25}-{p75})",
+    all_categorical() ~ "{n} ({p}%)")) %>% 
+  add_overall() %>% 
+  add_p()
+
+df %>% filter(episode==2) %>% 
+  tbl_summary(by = vaccination,
+              include = c(sex, status,
+                          age_month, age_group),
+              statistic = list(
+    all_continuous() ~ "{median} ({p25}-{p75})",
+    all_categorical() ~ "{n} ({p}%)")) %>% 
+  add_overall() %>% 
+  add_p()
+```
