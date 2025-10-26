@@ -1,4 +1,3 @@
-```{r, echo = F, warning=FALSE, message=FALSE}
 library(plotly)
 plot_rt <- function(data) {
   df_plot <- data
@@ -98,16 +97,8 @@ plot_rt <- function(data) {
   )
   return(p)
 }
-```
 
-```{r,echo = F, warning=FALSE, message = FALSE}
-#| label: fig-tp
-#| fig-cap: "Diễn tiến Rt của Thành phố"
-#| fig-width: 15
-#| fig-height: 7
-#| out-width: "100%"
 
-library(patchwork)
 df_filter_plot <- filter(df_filter, dates >= "2024-07-12")
 p_hist <- plot_ly(df_filter_plot, x = ~dates) %>%
   add_bars(y = ~I, 
@@ -143,4 +134,3 @@ df_rt_plot <- filter(df_rt, dates >= "2024-07-12")
 p_rt <- plot_rt(df_rt_plot)
 
 subplot(p_hist, p_rt, nrows = 2, shareX = T)
-```

@@ -149,13 +149,13 @@ ggplot(df %>% filter(!is.na(ngay_nv)), aes(x = ngay_nv)) +
   scale_x_date(date_breaks = "3 month", date_labels = "%m/%Y") +
   scale_y_continuous(expand = c(0,0)) +
   labs(x = "Ngày khởi phát",
-       y = "Số ca")
+       y = "Số ca") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 90, 
-                                   hjust = 1,
-                                   size = 12,
+                                   hjust = 0.5,
+                                   size = 10,
                                    color = "black"),
-        axis.text.x = element_text(size = 12,
+        axis.text.y = element_text(size = 10,
                                    color = "black"))
 ```
 
@@ -353,7 +353,12 @@ ggplot() +
     ) +
     theme_classic(base_size = 13) +
     theme(
-        axis.text.x = element_text(angle = 45, hjust = 1)
+        axis.text.x = element_text(angle = 45, 
+                                   hjust = 1,
+                                   size = 12,
+                                   color = "black"),
+        axis.text.y = element_text(size = 12,
+                                   color = "black")
     )
 ```
 
@@ -443,7 +448,12 @@ ggplot() +
     ) +
     theme_classic(base_size = 13) +
     theme(
-        axis.text.x = element_text(angle = 45, hjust = 1)
+        axis.text.x = element_text(angle = 45, 
+                                   hjust = 1,
+                                   size = 12,
+                                   color = "black"),
+        axis.text.y = element_text(size = 12,
+                                   color = "black")
     )
 ```
 
@@ -505,15 +515,19 @@ cases_summary <- df %>%
   ),
   rate_per_100k = (cases / population) * 100000)
 
-cases_summary %>%
-  tbl_summary(
-    by = episode,
-    include = c(cases, population, rate_per_100k),
-    statistic = list(all_continuous() ~ "{median} ({p25}-{p75})"),
-    digits = all_continuous() ~ 1,
-    missing = "no"
-  ) %>%
-  add_p()
+cases_summary_total <- cases_summary %>%
+  group_by(episode) %>%
+  summarise(
+    quan_huyen = "Toàn thành phố",
+    cases = sum(cases, na.rm = TRUE),
+    pop_2019 = sum(pop_2019, na.rm = TRUE),
+    pop_2024 = sum(pop_2024, na.rm = TRUE),
+    population = sum(population, na.rm = TRUE),
+    rate_per_100k = (cases / population) * 100000,
+    .groups = "drop"
+  )
+
+cases_summary_final <- bind_rows(cases_summary, cases_summary_total)
 
 ggplot(cases_summary,
        aes(y = reorder(quan_huyen, rate_per_100k),
@@ -540,7 +554,10 @@ ggplot(cases_summary,
     theme(
         legend.position = "bottom",
         strip.text = element_text(face = "bold"),
-        axis.text.y = element_text(size = 11)
+        axis.text.y = element_text(size = 12,
+                                   color = "black"),
+        axis.text.x = element_text(size = 12,
+                                   color = "black")
     ) +
     coord_cartesian(clip = "off") 
 ```
@@ -555,8 +572,12 @@ ggplot(df, aes(x = age_group, fill = factor(episode))) +
                     labels = c("2018-2020", "2024-2025"),
                     name = "") +
   labs(x = "Nhóm tuổi", y = "Density") +
-  theme_bw(base_size = 12) +
-  theme(legend.position = "bottom")
+  theme_bw() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(size = 12,
+                                   color = "black"),
+        axis.text.y = element_text(size = 12,
+                                   color = "black"))
 ```
 
 ## 7. Phân tích trong mỗi đợt dịch
@@ -606,3 +627,109 @@ df %>% filter(episode==2) %>%
   add_overall() %>% 
   add_p()
 ```
+
+## 8. Vẽ Rt theo màu CDC
+
+```{r}
+plot_rt <- function(data) {
+  df_plot <- data
+  
+  df_plot <- head(do.call(rbind, by(df_plot, df_plot$id, rbind, NA)), -1)
+  
+  df_plot[, c("pl", "id")] <- lapply(df_plot[, c("pl", "id")], zoo::na.locf)
+  
+  df_plot[] <- lapply(df_plot, zoo::na.locf, fromLast = TRUE)
+  
+  col <- c("#f26522", "#ed1d24", "#7f3f98", "#ffde17", "#00a14b")
+  
+  df_plot$color <- col[as.factor(df_plot$pl)]
+  
+  df_plot <- df_plot %>%
+    group_by(id) %>%
+    mutate(
+      q1_rt_adjusted = q1_rt + (row_number() - 1) * 0.0001,
+      q3_rt_adjusted = q3_rt + (row_number() - 1) * 0.0001
+    ) %>%
+    ungroup()
+  
+  p <- ggplot(df_plot, aes(x = dates)) +
+    
+    geom_ribbon(
+      aes(
+        ymin = q1_rt_adjusted,
+        ymax = q3_rt_adjusted,
+        fill = factor(pl),
+        group = interaction(id, pl)
+      ),
+      alpha = 0.45
+    ) +
+    
+    geom_line(aes(
+      y = rt,
+      color = factor(pl),
+      group = id
+    ), size = 1) +
+    
+    geom_hline(yintercept = 1,
+               linetype = "dashed",
+               color = "black") +
+    
+    geom_vline(
+      xintercept = as.Date("2024-09-16"),
+      color = "black",
+      size = 1
+    ) +
+    geom_vline(
+      xintercept = as.Date("2024-08-31"),
+      color = "black",
+      size = 1
+    ) +
+    scale_fill_manual(values = col, name = "Phase (pl)") +
+    scale_color_manual(values = col, name = "Phase (pl)") +
+    labs(x = "Date", y = "Estimated Rt") +
+    theme_bw(base_size = 13) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_line(linetype = "dotted"),
+      legend.position = "bottom",
+      legend.title = element_text(size = 10),
+      plot.background = element_rect(fill = "white", color = NA)
+    )
+  
+  return(p)
+}
+
+plot_hist <- function(df_filter_plot) {
+  ggplot(df_filter_plot, aes(x = dates)) +
+    geom_col(aes(y = I), fill = "#87A2FF", width = 0.8) +
+    labs(y = "Incidence", x = "") +
+    theme_bw(base_size = 12) +
+    theme(
+      axis.text.x = element_text(angle = 60, hjust = 1),
+      panel.grid.minor = element_blank(),
+      legend.position = "none",
+      plot.background = element_rect(fill = "white", color = NA)
+    )
+}
+```
+
+```{r}
+p_hist1 <- ob1_case %>% 
+  filter(dates>="2018-10-12") %>% 
+  plot_hist()
+
+p_hist2 <- ob2_case %>% 
+  filter(dates >= "2024-07-12") %>% 
+  plot_hist()
+
+p_rt1 <- df_rt_ob1 %>% 
+  filter(dates>="2018-10-12") %>% 
+  plot_rt()
+
+p_rt2 <- df_rt_ob2 %>% 
+  filter(dates >= "2024-07-12") %>% 
+  plot_rt()
+
+(p_hist1|p_rt1) + (p_hist2|p_rt2)
+```
+
