@@ -1,48 +1,50 @@
-## Mốc can thiệp cho từng đợt
-interv_ep1 <- as.Date(c("2018-12-01", "2019-02-01"))
-interv_ep2 <- as.Date(c("2024-08-31", "2024-10-01", "2024-11-01"))  
+library(strucchange)
 
-######################################################
-##### ITS model với Segment breakpoints (Unknow) #####
-######################################################
+analyze_breakpoints <- function(data, ep) {
+  
+  data_ep <- data %>%
+    filter(episode == ep) %>%
+    mutate(
+      dates = as.Date(dates),
+      time = as.numeric(dates - min(dates))
+    )
+  
+  # Ước tính mô hình breakpoint
+  bp_model <- breakpoints(rt ~ time, data = data_ep)
+  
+  # Chọn số breakpoint tối ưu theo BIC
+  n_breaks <- which.min(BIC(bp_model))
+  best_bp <- breakpoints(rt ~ time, data = data_ep)$breakpoints[n_breaks]
+  break_dates <- if (!all(is.na(best_bp))) data_ep$dates[best_bp] else NULL
+  
+  # Dự đoán fitted values cho số breakpoint tối ưu
+  fitted_vals <- fitted(bp_model, breaks = n_breaks)
+  
+  # Biểu đồ
+  p <- ggplot(data_ep, aes(x = dates, y = rt)) +
+    geom_line(color = "steelblue", linewidth = 0.7, alpha = 0.7) +
+    geom_line(aes(y = fitted_vals), color = "red", linewidth = 1) +
+    geom_hline(yintercept = 1, linetype = "dotted", color = "black") +
+    geom_vline(xintercept = break_dates, linetype = "dashed", color = "darkorange", linewidth = 1) +
+    labs(
+      title = paste("Episode", ep, "- Estimated Rt Breakpoints"),
+      subtitle = if (!is.null(break_dates)) paste("Breakpoints at:", paste(break_dates, collapse = ", ")) else "No breakpoints detected",
+      x = "Date",
+      y = "Rt"
+    ) +
+    theme_bw(base_size = 13)
+  
+  # Trả về list gồm mô hình và biểu đồ
+  return(list(
+    model = bp_model,
+    plot = p,
+    best_breaks = break_dates
+  ))
+}
 
-### Episode==1
-df1 <- df_rt %>%
-  filter(episode == 1) %>%
-  arrange(dates) %>%
-  mutate(time = as.numeric(dates - min(dates))) 
+res1 <- analyze_breakpoints(df_rt, 1)
+res2 <- analyze_breakpoints(df_rt, 2)
 
-model1_lm <- lm(rt ~ time, data = df1)
-model1_seg <- segmented(model1_lm, seg.Z = ~time, psi = as.numeric(interv_ep1 - min(df1$dates)))
-summary(model1_seg)
+summary(res2$model)
 
-### Episode==2
-df2 <- df_rt %>%
-  filter(episode == 2) %>%
-  arrange(dates) %>%
-  mutate(time = as.numeric(dates - min(dates))) 
-
-model2_lm <- lm(rt ~ time, data = df2)
-model2_seg <- segmented(model2_lm, seg.Z = ~time, psi = as.numeric(interv_ep2 - min(df2$dates)))
-summary(model2_seg)
-
-
-######################################################
-######### ITS model với Segment breakpoints  #########
-######################################################
-
-## Episode==1
-as.numeric(interv_ep1 - min(df1$dates))
-model11_seg <- segmented(model1_lm,
-                         seg.Z = ~ time,
-                         psi = c(82, 144), 
-                         control = seg.control(it.max = 0, fix.npsi = TRUE))
-summary(model11_seg)
-
-## Episode==2
-as.numeric(interv_ep2 - min(df2$dates))
-model22_seg <- segmented(model2_lm,
-                         seg.Z = ~ time,
-                         psi = c(81, 112, 143), 
-                         control = seg.control(it.max = 0, fix.npsi = TRUE))
-summary(model22_seg)
+res2$best_breaks
