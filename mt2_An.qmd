@@ -130,7 +130,7 @@ calc_rt_grouped <- function(data, group_var,
 #| warning: false
 #| message: false
 
-df <- readxl::read_xlsx("data_goc.xlsx",
+df <- readxl::read_xlsx("data_v2.xlsx",
                         sheet = "data",
                         col_types = "text")
 
@@ -193,20 +193,14 @@ df <- df %>% mutate(
     tinh_trang %in% "Điều trị nội trú" ~ "Nội trú",
     is.na(tinh_trang) ~ NA,
     TRUE ~ "Khác"
-  ),
-  x0_lantc = case_when(
-    x0_lantc == 0 ~ "Không",
-    is.na(x0_lantc) ~ "Không rõ",
-    TRUE ~ "Có"
-  )
-) %>% 
+  )) %>% 
   rename(
     birth = ngay_sinh,
     sex = gioi,
     diagnosis = pl_chan_doan,
     complication = bien_chung,
     status = tinh_trang,
-    vaccination = x0_lantc,
+    vaccination = tc,
     dates = ngay_kp,
     admission = ngay_nv,
     report = ngay_bc
@@ -366,12 +360,12 @@ ggplot() +
 
 ```{r}
 ob2_case <- df %>% 
-  filter(dates>="2024-01-01") %>%
+  filter(dates>="2024-05-28") %>%
   group_by(dates) %>% 
   summarise(I = n())
 
 ob2_rt <- df %>% 
-  filter(dates>="2024-05-27") %>% 
+  filter(dates>="2024-05-28") %>% 
   group_by(dates) %>% 
   summarise(I = n())
 
@@ -405,7 +399,7 @@ df_rt_ob2 <- df_rt_ob2 %>%
 ### Biểu đồ Rt gộp với số ca của đợt dịch 2
 
 ```{r}
-start_date <- as.Date("2024-01-01")
+start_date <- as.Date("2024-05-28")
 end_date   <- as.Date("2025-03-31")
 
 df_rt_ob2$dates <- as.Date(df_rt_ob2$dates)
@@ -466,11 +460,14 @@ df_rt_ob1$episode <- 1
 df_rt_ob2$episode <- 2
 df_rt <- bind_rows(df_rt_ob1, df_rt_ob2)
 
-df_rt %>% 
+df_rt %>%
   mutate(episode = as.factor(episode),
-        pl = factor(pl, levels = c("xanh", "vang", "cam", "do", "tim"))) %>% 
-  tbl_summary(by=episode, 
-              include = c(rt, q1_rt, q3_rt, pl)) %>%
+         pl = factor(pl, levels = c("xanh", "vang", "cam", "do", "tim"))) %>%
+  tbl_summary(
+    by = episode,
+    include = c(rt, q1_rt, q3_rt, pl),
+    digits = list(all_categorical() ~ 1)
+  ) %>%
   add_p()
 ```
 
@@ -489,11 +486,15 @@ df <- df %>%
   )
 
 df %>% 
-  filter(!(dates>="2020-04-01" & dates<="2023-12-31")) %>% 
+  filter(
+    (dates >= "2018-08-27" & dates <= "2020-03-31") | 
+    (dates >= "2024-05-28" & dates <= "2025-03-31")
+  ) %>% 
   tbl_summary(
   by = episode,
   include = c(age_month, age_group, sex, 
               status, vaccination),
+  digits = list(all_categorical() ~ 1),
   statistic = list(
     all_continuous() ~ "{median} ({p25}-{p75})",
     all_categorical() ~ "{n} ({p}%)"

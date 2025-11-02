@@ -1,17 +1,15 @@
 df_ep1 <- df_rt %>%
   filter(episode == 1) %>%
   arrange(dates) %>%
-  mutate(time = as.numeric(dates - min(dates)) + 1)
+  mutate(time = as.numeric(dates - min(dates)))
 
 # mô hình breakpoints
 bp_model <- breakpoints(rt ~ time, data = df_ep1)
 
-opt_m <- which.min(BIC(bp_model))
-best_bp <- bp_model$breakpoints[opt_m]
-break_dates_auto <- df_ep1$dates[best_bp]
+break_dates_auto <- df_ep1$dates[44]
 
 # Fitted
-fit_auto <- lm(rt ~ breakfactor(bp_model, breaks = opt_m), data = df_ep1)
+fit_auto <- lm(rt ~ breakfactor(bp_model, breaks = 1), data = df_ep1)
 
 # Ngày can thiệp
 interventions <- as.Date(c("2018-12-01", "2019-02-01"))
@@ -21,17 +19,19 @@ df_ep1 <- df_ep1 %>%
     phase = case_when(
       dates < interventions[1] ~ "Trước 1",
       dates >= interventions[1] & dates < interventions[2] ~ "Sau 1",
+      # dates >= interventions[2] & dates < interventions[3] ~ "Sau 2",
       TRUE ~ "Sau 2"
     )
   )
 
 # mô hình ITS
+df_ep1$phase <- relevel(factor(df_ep1$phase), ref = "Trước 1")
 model_its <- lm(rt ~ time + phase, data = df_ep1)
 summary(model_its)
 
 # ---- 4. So sánh kết quả hai mô hình ----
 comparison_tbl <- tibble(
-  episode = 1,
+  episode = 2,
   model_auto_breaks = paste(break_dates_auto, collapse = ", "),
   intervention_dates = paste(interventions, collapse = ", "),
   n_breaks_auto = length(break_dates_auto),
@@ -42,20 +42,74 @@ comparison_tbl <- tibble(
 print(comparison_tbl)
 
 # ---- 5. Vẽ biểu đồ ----
-ggplot(df_ep1, aes(x = dates, y = rt)) +
-  geom_line(color = "steelblue", linewidth = 0.8) +
-  geom_vline(xintercept = as.numeric(interventions),
-             linetype = "dashed", color = "darkred", alpha = 0.7) +
+p1 <- ggplot(df_ep2, aes(x = dates, y = rt)) +
+  geom_line(aes(color = "Rt thực tế"), linewidth = 1) +
   geom_vline(xintercept = as.numeric(break_dates_auto),
-             linetype = "dotted", color = "darkgreen", linewidth = 1) +
-  geom_line(aes(y=fit_auto$fitted.values), color = "red") +
-  labs(
-    title = "Phân tích Rt – Đợt 1 (Episode 1)",
-    subtitle = paste0(
-      "Breakpoints tự động: ", paste(break_dates_auto, collapse = ", "),
-      " | Ngày can thiệp: ", paste(interventions, collapse = ", ")
-    ),
-    x = "Ngày",
-    y = "Rt"
+             linetype = "dashed", color = "blue", linewidth = 1) +
+  geom_hline(yintercept = 1, color = "black", linetype = "dashed") +
+  annotate("text",
+           x = break_dates_auto,
+           y = 5,                            
+           label = format(break_dates_auto, "%d/%m/%Y"),
+           angle = 90,                       
+           vjust = -1.5,                     
+           hjust = 0,                        
+           color = "blue", size = 4) +
+  geom_smooth(aes(y = fit_auto$fitted.values, color = "Breakpoint fitted"),
+              linewidth = 1.1, alpha = 0.8, se = FALSE) +
+  scale_x_date(name = "Ngày nhập viện",
+               date_breaks = "1 months",
+               date_labels = "%m/%Y") +
+  scale_y_continuous(name = expression(R[t]),
+                     breaks = seq(0, 5.5, 1)) +
+  scale_color_manual(
+    name = NULL,
+    values = c(
+      "Rt thực tế" = "black",
+      "Breakpoint fitted" = "blue"
+    )
   ) +
-  theme_minimal(base_size = 13)
+  theme_classic(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    legend.justification = "center",
+    legend.text = element_text(size = 11),
+    axis.text = element_text(color = "black",
+                             size = 10)
+  )
+
+
+p2 <- ggplot(df_ep1, aes(x = dates, y = rt)) +
+  geom_line(aes(color = "Rt thực tế"), linewidth = 1) +
+  geom_vline(xintercept = as.numeric(interventions),
+  linetype = "dotted", color = "red", linewidth = 1) +
+  annotate("text",
+           x = interventions,
+           y = 12,
+           label = format(interventions, "%d/%m/%Y"),
+           angle = 90,
+           vjust = 1.5,
+           hjust = 1,
+           color = "red", size = 3.5) +
+  geom_smooth(aes(y = model_its$fitted.values, color = "ITS fitted"),
+              linewidth = 1.1, alpha = 0.7, se = FALSE) +
+  scale_x_date(name = "Ngày nhập viện",
+               date_breaks = "3 months",
+               date_labels = "%m/%Y") +
+  scale_y_continuous(name = expression(R[t]),
+                     breaks = seq(0, 15.5, 1)) +
+  scale_color_manual(
+    name = NULL,
+    values = c(
+      "Rt thực tế" = "black",
+      "ITS fitted" = "red"
+    )
+  ) +
+  theme_classic(base_size = 13) +
+  theme(
+    legend.position = "bottom",
+    legend.justification = "center",
+    legend.text = element_text(size = 11),
+    axis.text = element_text(color = "black",
+                             size = 12)
+  )
