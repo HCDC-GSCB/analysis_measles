@@ -27,6 +27,9 @@ library(purrr)
 library(lubridate)
 library(viridis)
 library(ggpubr)
+library(igraph)
+library(ggraph)
+library(reshape2)
 
 ## Import excel data
 convert_excel_mixed_date <- function(x) {
@@ -121,6 +124,15 @@ calc_rt_grouped <- function(data, group_var,
   
   return(df_rt)
 }
+
+# --- Hàm tính cross-correlation ---
+get_ccf <- function(x, y, max_lag = 5) {
+  ccf_obj <- ccf(x, y, plot = FALSE, lag.max = max_lag)
+  tibble(
+    lag = ccf_obj$lag,
+    correlation = ccf_obj$acf
+  )
+}
 ```
 
 
@@ -130,7 +142,7 @@ calc_rt_grouped <- function(data, group_var,
 #| warning: false
 #| message: false
 
-df <- readxl::read_xlsx("data_v2.xlsx",
+df <- readxl::read_xlsx("data.xlsx",
                         sheet = "data",
                         col_types = "text")
 
@@ -732,5 +744,161 @@ p_rt2 <- df_rt_ob2 %>%
   plot_rt()
 
 (p_hist1|p_rt1) + (p_hist2|p_rt2)
+```
+
+## 9. Tương quan số ca quận/huyện
+
+```{r}
+df_cor <- df %>% 
+  filter(dates >= "2018-08-27" & dates <= "2020-03-31") %>%
+  group_by(dates, quan_huyen) %>% 
+  summarise(n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = quan_huyen, values_from = n, values_fill = 0)
+
+cor_mat <- cor(df_cor %>% select(-dates), use = "pairwise.complete.obs")
+
+cor_long <- melt(cor_mat)
+
+ccf_df <- get_ccf(df_cor$`Bình Chánh`, df_cor$`Bình Tân`)
+
+p1 <- ggplot(ccf_df, aes(x = lag, y = correlation)) +
+  geom_col(fill = "lightblue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(x = "Độ trễ",
+       y = "Hệ số tương quan",
+       title = "Bình Chánh và Bình Tân") +
+  scale_x_continuous(breaks = seq(-5,5,1)) + 
+  theme_classic()
+
+p2 <- ggplot(cor_long, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  geom_point(data = subset(cor_long, abs(value) > 0.7), shape = 21, size = 2, color = "black") +
+  scale_fill_gradient2(
+  low = "#4575B4", mid = "white", high = "red",
+  midpoint = 0, limits = c(-1, 1), name = "Correlation"
+)  +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8, color = "black"),
+    axis.text.y = element_text(size = 8,
+                               color = "black"),
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+cor_network <- cor_mat
+cor_network[abs(cor_network) < 0.6] <- 0 
+
+g <- graph_from_adjacency_matrix(cor_network, mode = "undirected", weighted = TRUE, diag = FALSE)
+
+p3 <- ggraph(g, layout = "fr") +
+  geom_edge_link(
+    aes(width = abs(weight)),
+    color = "red",
+    alpha = 0.6,
+    show.legend = TRUE
+  ) +
+  scale_edge_width_continuous(
+    name = "Correlation"
+  ) +
+  geom_node_point(size = 5, color = "skyblue") +
+  geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  theme_void() +
+  guides(
+    edge_color = "none" 
+  ) + 
+  theme(legend.position = "top")
+
+p1 <- p1 +
+  coord_cartesian(clip = "off") +
+  theme(axis.title.x = element_text(vjust = -0.5))
+
+final_plot <- p2 + (p3 / p1) +
+  plot_annotation(
+    tag_levels = 'A', 
+    tag_prefix = "(",
+    tag_suffix = ")"
+  ) &
+  theme(
+    plot.tag = element_text(face = "bold", size = 14)
+  )
+```
+
+```{r}
+df_cor <- df %>% 
+  filter(dates >= "2024-05-28") %>%
+  group_by(dates, quan_huyen) %>% 
+  summarise(n = n(), .groups = "drop") %>%
+  pivot_wider(names_from = quan_huyen, values_from = n, values_fill = 0)
+
+cor_mat <- cor(df_cor %>% select(-dates), use = "pairwise.complete.obs")
+
+cor_long <- melt(cor_mat)
+
+ccf_df <- get_ccf(df_cor$`Thành phố Thủ Đức`, df_cor$`Tân Bình`)
+
+p1 <- ggplot(ccf_df, aes(x = lag, y = correlation)) +
+  geom_col(fill = "lightblue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(x = "Độ trễ",
+       y = "Hệ số tương quan",
+       title = "Thành phố Thủ Đức và Tân Bình") +
+  scale_x_continuous(breaks = seq(-5,5,1)) + 
+  theme_classic()
+
+p2 <- ggplot(cor_long, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +
+  geom_point(data = subset(cor_long, abs(value) > 0.7), shape = 21, size = 2, color = "black") +
+  scale_fill_gradient2(
+  low = "#4575B4", mid = "white", high = "red",
+  midpoint = 0, limits = c(-1, 1), name = "Correlation"
+)  +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8, color = "black"),
+    axis.text.y = element_text(size = 8,
+                               color = "black"),
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+cor_network <- cor_mat
+cor_network[abs(cor_network) < 0.6] <- 0 
+
+g <- graph_from_adjacency_matrix(cor_network, mode = "undirected", weighted = TRUE, diag = FALSE)
+
+p3 <- ggraph(g, layout = "fr") +
+  geom_edge_link(
+    aes(width = abs(weight)),
+    color = "red",
+    alpha = 0.6,
+    show.legend = TRUE
+  ) +
+  scale_edge_width_continuous(
+    name = "Correlation"
+  ) +
+  geom_node_point(size = 5, color = "skyblue") +
+  geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  theme_void() +
+  guides(
+    edge_color = "none" 
+  ) + 
+  theme(legend.position = "top")
+
+final_plot <- p2 + (p3 / p1) +
+  plot_annotation(
+    tag_levels = 'A', 
+    tag_prefix = "(",
+    tag_suffix = ")"
+  ) &
+  theme(
+    plot.tag = element_text(face = "bold", size = 14)
+  )
+```
+
+```{r}
+
 ```
 

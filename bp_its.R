@@ -11,22 +11,19 @@ break_dates_auto <- df_ep1$dates[44]
 # Fitted
 fit_auto <- lm(rt ~ breakfactor(bp_model, breaks = 1), data = df_ep1)
 
-# Ngày can thiệp
-interventions <- as.Date(c("2018-12-01", "2019-02-01"))
+# Ngày can thiệp có hiệu lực
+interventions <- as.Date(c("2019-01-30", "2019-05-31"))
 
 df_ep1 <- df_ep1 %>%
   mutate(
-    phase = case_when(
-      dates < interventions[1] ~ "Trước 1",
-      dates >= interventions[1] & dates < interventions[2] ~ "Sau 1",
-      # dates >= interventions[2] & dates < interventions[3] ~ "Sau 2",
-      TRUE ~ "Sau 2"
-    )
+    post1 = ifelse(dates >= interventions[1], 1, 0),
+    time_after1 = ifelse(dates >= interventions[1], time - min(time[dates >= interventions[1]]), 0),
+    post2 = ifelse(dates >= interventions[2], 1, 0),
+    time_after2 = ifelse(dates >= interventions[2], time - min(time[dates >= interventions[2]]), 0),
   )
 
 # mô hình ITS
-df_ep1$phase <- relevel(factor(df_ep1$phase), ref = "Trước 1")
-model_its <- lm(rt ~ time + phase, data = df_ep1)
+model_its <- lm(rt ~ time + post1 + time_after1 + post2 + time_after2, data = df_ep1)
 summary(model_its)
 
 # ---- 4. So sánh kết quả hai mô hình ----
