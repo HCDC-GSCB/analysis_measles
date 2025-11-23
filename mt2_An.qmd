@@ -841,14 +841,44 @@ cor_mat <- cor(df_cor %>% select(-dates), use = "pairwise.complete.obs")
 
 cor_long <- melt(cor_mat)
 
-ccf_df <- get_ccf(df_cor$`Thành phố Thủ Đức`, df_cor$`Tân Bình`)
+ccf_df1 <- get_ccf(df_cor$`Thành phố Thủ Đức`, df_cor$`Tân Bình`)
+ccf_df2 <- get_ccf(df_cor$`Thành phố Thủ Đức`, df_cor$`Quận 7`)
+ccf_df3 <- get_ccf(df_cor$`Thành phố Thủ Đức`, df_cor$`Quận 8`)
+ccf_df4 <- get_ccf(df_cor$`Thành phố Thủ Đức`, df_cor$`Hóc Môn`)
 
-p1 <- ggplot(ccf_df, aes(x = lag, y = correlation)) +
+p1 <- ggplot(ccf_df1, aes(x = lag, y = correlation)) +
   geom_col(fill = "lightblue") +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
   labs(x = "Độ trễ",
        y = "Hệ số tương quan",
        title = "Thành phố Thủ Đức và Tân Bình") +
+  scale_x_continuous(breaks = seq(-5,5,1)) + 
+  theme_classic()
+
+p4 <- ggplot(ccf_df2, aes(x = lag, y = correlation)) +
+  geom_col(fill = "lightblue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(x = "Độ trễ",
+       y = "Hệ số tương quan",
+       title = "Thành phố Thủ Đức và Quận 7") +
+  scale_x_continuous(breaks = seq(-5,5,1)) + 
+  theme_classic()
+
+p5 <- ggplot(ccf_df3, aes(x = lag, y = correlation)) +
+  geom_col(fill = "lightblue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(x = "Độ trễ",
+       y = "Hệ số tương quan",
+       title = "Thành phố Thủ Đức và Quận 8") +
+  scale_x_continuous(breaks = seq(-5,5,1)) + 
+  theme_classic()
+
+p6 <- ggplot(ccf_df4, aes(x = lag, y = correlation)) +
+  geom_col(fill = "lightblue") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  labs(x = "Độ trễ",
+       y = "Hệ số tương quan",
+       title = "Thành phố Thủ Đức và Hóc Môn") +
   scale_x_continuous(breaks = seq(-5,5,1)) + 
   theme_classic()
 
@@ -892,18 +922,16 @@ p3 <- ggraph(g, layout = "fr") +
   ) + 
   theme(legend.position = "top")
 
-final_plot <- p2 + (p3 / p1) +
+row2 <- wrap_plots(p1, p4, p5, p6, ncol = 4)
+
+final_plot <- (p2 + p3) / row2 +
   plot_annotation(
-    tag_levels = 'A', 
+    tag_levels = 'A',
     tag_prefix = "(",
     tag_suffix = ")"
-  ) &
-  theme(
-    plot.tag = element_text(face = "bold", size = 14)
   )
+
+ggsave("combined_plot.png", final_plot, width = 16, height = 10, dpi = 800)
 ```
 
-```{r}
-
-```
 

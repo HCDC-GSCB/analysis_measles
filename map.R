@@ -8,8 +8,8 @@ library(ggspatial)
 #============================
 # 1️⃣ DỮ LIỆU CA BỆNH
 #============================
-df_ob2 <- df %>% 
-  filter(dates >= "2024-05-28") %>% 
+df_ob1 <- df %>% 
+  filter(dates >= "2018-08-27" & dates <= "2020-03-31") %>% 
   group_by(quan_huyen, dates) %>% 
   summarise(I = n(), .groups = "drop") %>% 
   group_by(quan_huyen) %>% 
@@ -17,7 +17,7 @@ df_ob2 <- df %>%
   replace_na(list(I = 0)) %>% 
   ungroup()
 
-cases_month <- df_ob2 %>%
+cases_month <- df_ob1 %>%
   mutate(month = floor_date(dates, "month")) %>%
   group_by(quan_huyen, month) %>%
   summarise(cases = sum(I, na.rm = TRUE), .groups = "drop") %>%
@@ -37,7 +37,7 @@ cases_month <- df_ob2 %>%
 pop <- readxl::read_excel("pop.xlsx") %>%
   mutate(across(starts_with("pop_"), as.numeric))
 
-pop <- pop %>% select(quan_huyen, pop_2024) %>% rename(pop = pop_2024)
+pop <- pop %>% select(quan_huyen, pop_2019) %>% rename(pop = pop_2019)
 
 #============================
 # 3️⃣ BẢN ĐỒ
@@ -63,11 +63,16 @@ map_cases_sf <- map_hcm %>%
 #============================
 # 5️⃣ VẼ BẢN ĐỒ
 #============================
+map_cases_sf$fill_var <- ifelse(map_cases_sf$cum_cases == 0, NA, map_cases_sf$cum_cases)
+map_cases_sf$fill_var1 <- ifelse(map_cases_sf$incidence_rate == 0, NA, map_cases_sf$incidence_rate)
+
 p <- ggplot(map_cases_sf) +
-  geom_sf(aes(fill = incidence_rate), color = "black", size = 0.25) +
+  geom_sf(aes(fill = fill_var1), color = "black", size = 0.25) +
   scale_fill_gradientn(
-    colours = c("white", "#0000FF", "#FF0000"),
-    limits = c(0, max(map_cases_sf$incidence_rate, na.rm = TRUE)),
+    colours = c("lightblue", "purple", "red"),
+    limits = c(min(map_cases_sf$fill_var1, na.rm = TRUE),
+               max(map_cases_sf$fill_var1, na.rm = TRUE)),
+    breaks = seq(0, 120, 30),
     name = expression("Incidence rate (per 100.0000 population)"),
     na.value = "white"
   ) +
@@ -95,7 +100,7 @@ p <- ggplot(map_cases_sf) +
   )
 
 ggsave(
-  filename = "map_oub1.jpeg",
+  filename = "map_oub2.jpeg",
   plot = p,
   width = 11, height = 6,
   dpi = 1000, bg = "white"
