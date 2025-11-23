@@ -8,8 +8,8 @@ library(ggspatial)
 #============================
 # 1️⃣ DỮ LIỆU CA BỆNH
 #============================
-df_ob1 <- df %>% 
-  filter(dates >= "2018-08-27" & dates <= "2020-03-31") %>% 
+df_ob2 <- df %>% 
+  filter(dates >= "2024-05-28") %>% 
   group_by(quan_huyen, dates) %>% 
   summarise(I = n(), .groups = "drop") %>% 
   group_by(quan_huyen) %>% 
@@ -17,23 +17,27 @@ df_ob1 <- df %>%
   replace_na(list(I = 0)) %>% 
   ungroup()
 
-cases_month <- df_ob1 %>%
+cases_month <- df_ob2 %>%
   mutate(month = floor_date(dates, "month")) %>%
   group_by(quan_huyen, month) %>%
   summarise(cases = sum(I, na.rm = TRUE), .groups = "drop") %>%
   complete(quan_huyen, month, fill = list(cases = 0)) %>%
+  arrange(quan_huyen, month) %>%   
+  group_by(quan_huyen) %>%
   mutate(
+    cum_cases = cumsum(cases),  
     month_lab = format(month, "%b-%Y"),
     month_lab = factor(month_lab, levels = unique(month_lab))
-  )
+  ) %>%
+  ungroup()
 
 #============================
 # 2️⃣ DÂN SỐ
 #============================
-pop <- read_excel("pop.xlsx") %>%
+pop <- readxl::read_excel("pop.xlsx") %>%
   mutate(across(starts_with("pop_"), as.numeric))
 
-pop <- pop %>% select(quan_huyen, pop_2019) %>% rename(pop = pop_2019)
+pop <- pop %>% select(quan_huyen, pop_2024) %>% rename(pop = pop_2024)
 
 #============================
 # 3️⃣ BẢN ĐỒ
@@ -54,7 +58,7 @@ map_hcm <- st_read("gadm41_VNM.gpkg", layer = "ADM_ADM_2") %>%
 map_cases_sf <- map_hcm %>%
   left_join(cases_month, by = "quan_huyen") %>% 
   left_join(pop, by = "quan_huyen") %>%
-  mutate(incidence_rate = (cases / pop) * 100000)
+  mutate(incidence_rate = (cum_cases / pop) * 100000)
 
 #============================
 # 5️⃣ VẼ BẢN ĐỒ
@@ -64,7 +68,6 @@ p <- ggplot(map_cases_sf) +
   scale_fill_gradientn(
     colours = c("white", "#0000FF", "#FF0000"),
     limits = c(0, max(map_cases_sf$incidence_rate, na.rm = TRUE)),
-    breaks = c(0, 10, 20, 30),
     name = expression("Incidence rate (per 100.0000 population)"),
     na.value = "white"
   ) +

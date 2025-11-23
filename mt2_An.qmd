@@ -181,10 +181,10 @@ df <- df %>% mutate(
       age_month<12 ~ "<1 tuổi",
       age_month>=12 & age_month<=60 ~ "1-5 tuổi",     
       age_month>60 & age_month<=120 ~ "6-10 tuổi",
-      age_month>120 & age_month<=180 ~ "10-15 tuổi",
+      age_month>120 & age_month<=180 ~ "11-15 tuổi",
       TRUE ~ ">15 tuổi"
     ),
-  age_group = factor(age_group, levels = c("<1 tuổi", "1-5 tuổi", "6-10 tuổi", "10-15 tuổi", ">15 tuổi")),
+  age_group = factor(age_group, levels = c("<1 tuổi", "1-5 tuổi", "6-10 tuổi", "11-15 tuổi", ">15 tuổi")),
   gioi = case_when(
     gioi %in% c("nam", "Nam", "NAM") ~ "Nam",
     TRUE ~ "Nữ"
@@ -200,18 +200,19 @@ df <- df %>% mutate(
     is.na(bien_chung) ~ "Không xác định",
     TRUE ~ "Có"
   ),
-  tinh_trang = case_when(
+  status = case_when(
+    tinh_trang %in% c("Điều trị nội trú", 
+                      "Ra viện",
+                      "Chuyển viện") ~ "Nội trú",
     tinh_trang %in% "Điều trị ngoại trú" ~ "Ngoại trú",
-    tinh_trang %in% "Điều trị nội trú" ~ "Nội trú",
-    is.na(tinh_trang) ~ NA,
-    TRUE ~ "Khác"
+    tinh_trang %in% "Tử vong" ~ "Tử vong",
+    TRUE ~ tinh_trang
   )) %>% 
   rename(
     birth = ngay_sinh,
     sex = gioi,
     diagnosis = pl_chan_doan,
     complication = bien_chung,
-    status = tinh_trang,
     vaccination = tc,
     dates = ngay_kp,
     admission = ngay_nv,
@@ -500,7 +501,7 @@ df <- df %>%
 df %>% 
   filter(
     (dates >= "2018-08-27" & dates <= "2020-03-31") | 
-    (dates >= "2024-05-28" & dates <= "2025-03-31")
+    (dates >= "2024-05-28")
   ) %>% 
   tbl_summary(
   by = episode,
@@ -600,7 +601,9 @@ ggplot(df, aes(x = age_group, fill = factor(episode))) +
 ```{r}
 df %>% filter(dates>="2018-08-27"&dates<="2020-03-31") %>% 
   tbl_summary(by = age_group,
+              missing = "no",
               include = c(sex, status, vaccination),
+              digits = list(all_categorical() ~ 1),
               statistic = list(
     all_continuous() ~ "{median} ({p25}-{p75})",
     all_categorical() ~ "{n} ({p}%)")) %>% 
@@ -623,7 +626,9 @@ df %>% filter(episode==1) %>%
 ```{r}
 df %>% filter(dates>="2024-05-27") %>% 
   tbl_summary(by = age_group,
+              missing = "no",
               include = c(sex, status, vaccination),
+              digits = list(all_categorical() ~ 1),
               statistic = list(
     all_continuous() ~ "{median} ({p25}-{p75})",
     all_categorical() ~ "{n} ({p}%)")) %>% 
@@ -755,7 +760,7 @@ df_cor <- df %>%
   summarise(n = n(), .groups = "drop") %>%
   pivot_wider(names_from = quan_huyen, values_from = n, values_fill = 0)
 
-cor_mat <- cor(df_cor %>% select(-dates), use = "pairwise.complete.obs")
+cor_mat <- cor(df_cor %>% select(-dates), use = "pairwise.complete.obs", method = "spearman")
 
 cor_long <- melt(cor_mat)
 
