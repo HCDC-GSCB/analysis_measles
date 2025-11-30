@@ -773,23 +773,31 @@ p1 <- ggplot(ccf_df, aes(x = lag, y = correlation)) +
        y = "Hệ số tương quan",
        title = "Bình Chánh và Bình Tân") +
   scale_x_continuous(breaks = seq(-5,5,1)) + 
-  theme_classic()
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 16, color = "black"), 
+    axis.title = element_text(size = 18, color = "black"),
+    plot.title = element_text(size = 18, face = "bold", color = "black")
+  )
 
 p2 <- ggplot(cor_long, aes(Var1, Var2, fill = value)) +
   geom_tile(color = "white") +
   geom_point(data = subset(cor_long, abs(value) > 0.7), shape = 21, size = 2, color = "black") +
   scale_fill_gradient2(
   low = "#4575B4", mid = "white", high = "red",
-  midpoint = 0, limits = c(-1, 1), name = "Correlation"
+  midpoint = 0, limits = c(-1, 1), 
+  breaks = seq(-1,1,1),
+  name = "Correlation"
 )  +
-  theme_minimal(base_size = 11) +
+  theme_minimal(base_size = 16) +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8, color = "black"),
-    axis.text.y = element_text(size = 8,
-                               color = "black"),
+    axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1, size = 16, color = "black"),
+    axis.text.y = element_text(size = 16, color = "black"),  
     panel.grid = element_blank(),
     axis.title = element_blank(),
-    legend.position = "bottom"
+    legend.position = "bottom",
+    legend.text = element_text(size = 18, color = "black"),   
+    legend.title = element_text(size = 18, color = "black")   
   )
 
 cor_network <- cor_mat
@@ -807,27 +815,42 @@ p3 <- ggraph(g, layout = "fr") +
   scale_edge_width_continuous(
     name = "Correlation"
   ) +
-  geom_node_point(size = 5, color = "skyblue") +
-  geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  geom_node_point(size = 4, color = "skyblue") +
+  geom_node_text(aes(label = name), repel = TRUE, size = 5) +
   theme_void() +
   guides(
     edge_color = "none" 
   ) + 
-  theme(legend.position = "top")
+  theme(
+    legend.position = "top",
+    legend.text = element_text(size = 18, color = "black"),
+    legend.title = element_text(size = 18, color = "black")
+  )
 
 p1 <- p1 +
   coord_cartesian(clip = "off") +
   theme(axis.title.x = element_text(vjust = -0.5))
 
 final_plot <- p2 + (p3 / p1) +
+  plot_layout(widths = c(1.2, 1)) + 
   plot_annotation(
     tag_levels = 'A', 
     tag_prefix = "(",
     tag_suffix = ")"
   ) &
   theme(
-    plot.tag = element_text(face = "bold", size = 14)
+    plot.tag = element_text(face = "bold", size = 18)
   )
+
+ggsave(
+  filename = "corr_oub1.jpeg",
+  plot = final_plot,
+  width = 14,  
+  height = 10, 
+  units = "in",
+  dpi = 500,
+  device = "jpeg"
+)
 ```
 
 ```{r}
@@ -853,7 +876,12 @@ p1 <- ggplot(ccf_df1, aes(x = lag, y = correlation)) +
        y = "Hệ số tương quan",
        title = "Thành phố Thủ Đức và Tân Bình") +
   scale_x_continuous(breaks = seq(-5,5,1)) + 
-  theme_classic()
+  theme_classic() +
+  theme(
+      axis.text = element_text(size = 22, color = "black"), 
+    axis.title = element_text(size = 24, color = "black"),
+    plot.title = element_text(size = 22, face = "bold", color = "black")
+  )
 
 p4 <- ggplot(ccf_df2, aes(x = lag, y = correlation)) +
   geom_col(fill = "lightblue") +
@@ -862,7 +890,12 @@ p4 <- ggplot(ccf_df2, aes(x = lag, y = correlation)) +
        y = "Hệ số tương quan",
        title = "Thành phố Thủ Đức và Quận 7") +
   scale_x_continuous(breaks = seq(-5,5,1)) + 
-  theme_classic()
+  theme_classic() +
+  theme(
+      axis.text = element_text(size = 22, color = "black"), 
+    axis.title = element_text(size = 24, color = "black"),
+    plot.title = element_text(size = 22, face = "bold", color = "black")
+  )
 
 p5 <- ggplot(ccf_df3, aes(x = lag, y = correlation)) +
   geom_col(fill = "lightblue") +
@@ -871,7 +904,12 @@ p5 <- ggplot(ccf_df3, aes(x = lag, y = correlation)) +
        y = "Hệ số tương quan",
        title = "Thành phố Thủ Đức và Quận 8") +
   scale_x_continuous(breaks = seq(-5,5,1)) + 
-  theme_classic()
+  theme_classic() +
+  theme(
+      axis.text = element_text(size = 22, color = "black"), 
+    axis.title = element_text(size = 24, color = "black"),
+    plot.title = element_text(size = 22, face = "bold", color = "black")
+  )
 
 p6 <- ggplot(ccf_df4, aes(x = lag, y = correlation)) +
   geom_col(fill = "lightblue") +
@@ -880,23 +918,30 @@ p6 <- ggplot(ccf_df4, aes(x = lag, y = correlation)) +
        y = "Hệ số tương quan",
        title = "Thành phố Thủ Đức và Hóc Môn") +
   scale_x_continuous(breaks = seq(-5,5,1)) + 
-  theme_classic()
+  theme_classic() +
+  theme(
+      axis.text = element_text(size = 22, color = "black"), 
+    axis.title = element_text(size = 24, color = "black"),
+    plot.title = element_text(size = 22, face = "bold", color = "black")
+  )
 
 p2 <- ggplot(cor_long, aes(Var1, Var2, fill = value)) +
   geom_tile(color = "white") +
   geom_point(data = subset(cor_long, abs(value) > 0.7), shape = 21, size = 2, color = "black") +
   scale_fill_gradient2(
   low = "#4575B4", mid = "white", high = "red",
-  midpoint = 0, limits = c(-1, 1), name = "Correlation"
+  midpoint = 0, limits = c(-1, 1), 
+  breaks = seq(-1,1,1), name = "Correlation"
 )  +
-  theme_minimal(base_size = 11) +
+  theme_minimal(base_size = 16) +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 8, color = "black"),
-    axis.text.y = element_text(size = 8,
-                               color = "black"),
+    axis.text.x = element_text(angle = 60, hjust = 1, vjust = 1, size = 22, color = "black"),
+    axis.text.y = element_text(size = 22, color = "black"),  
     panel.grid = element_blank(),
     axis.title = element_blank(),
-    legend.position = "bottom"
+    legend.position = "top",
+    legend.text = element_text(size = 18, color = "black"),   
+    legend.title = element_text(size = 22, color = "black")   
   )
 
 cor_network <- cor_mat
@@ -914,24 +959,32 @@ p3 <- ggraph(g, layout = "fr") +
   scale_edge_width_continuous(
     name = "Correlation"
   ) +
-  geom_node_point(size = 5, color = "skyblue") +
-  geom_node_text(aes(label = name), repel = TRUE, size = 3) +
+  geom_node_point(size = 9, color = "skyblue") +
+  geom_node_text(aes(label = name), repel = TRUE, size = 10) +
   theme_void() +
   guides(
     edge_color = "none" 
   ) + 
-  theme(legend.position = "top")
+  theme(
+    legend.position = "top",
+    legend.text = element_text(size = 18, color = "black"),
+    legend.title = element_text(size = 18, color = "black")
+  )
 
-row2 <- wrap_plots(p1, p4, p5, p6, ncol = 4)
+row2 <- (p1 | p4 | p5 | p6)
 
-final_plot <- (p2 + p3) / row2 +
+row1 <- (p2 + p3) + plot_layout(widths = c(1.2, 1))
+
+final_plot <- row1 / row2 + 
+  plot_layout(heights = c(1.6, 1)) +
   plot_annotation(
     tag_levels = 'A',
     tag_prefix = "(",
     tag_suffix = ")"
+  ) &
+  theme(
+    plot.tag = element_text(face = "bold", size = 18)
   )
 
-ggsave("combined_plot.png", final_plot, width = 16, height = 10, dpi = 800)
+ggsave("corr_oub2.jpeg", final_plot, width = 26, height = 18, dpi = 500)
 ```
-
-

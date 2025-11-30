@@ -9,10 +9,8 @@ analyze_breakpoints <- function(data, ep) {
       time = as.numeric(dates - min(dates))
     )
   
-  # Ước tính mô hình breakpoint
   bp_model <- breakpoints(rt ~ time, data = data_ep)
   
-  # Chọn số breakpoint tối ưu theo BIC
   n_breaks <- which.min(BIC(bp_model))
   best_bp <- breakpoints(rt ~ time, data = data_ep)$breakpoints[n_breaks]
   break_dates <- if (!all(is.na(best_bp))) data_ep$dates[best_bp] else NULL
@@ -34,7 +32,6 @@ analyze_breakpoints <- function(data, ep) {
     ) +
     theme_bw(base_size = 13)
   
-  # Trả về list gồm mô hình và biểu đồ
   return(list(
     model = bp_model,
     plot = p,
@@ -45,6 +42,6 @@ analyze_breakpoints <- function(data, ep) {
 res1 <- analyze_breakpoints(df_rt, 1)
 res2 <- analyze_breakpoints(df_rt, 2)
 
-summary(res2$model)
+summary(res1$model)
 
 res2$best_breaks

@@ -73,21 +73,21 @@ p <- ggplot(map_cases_sf) +
     limits = c(min(map_cases_sf$fill_var1, na.rm = TRUE),
                max(map_cases_sf$fill_var1, na.rm = TRUE)),
     breaks = seq(0, 120, 30),
-    name = expression("Incidence rate (per 100.0000 population)"),
+    name = expression("Cummulative incidence rate (per 100.0000 population)"),
     na.value = "white"
   ) +
   facet_wrap(~ month_lab, ncol = 7) +
-  theme_minimal(base_size = 12) +
+  theme_minimal(base_size = 17) +
   theme(
     axis.text = element_blank(),
     axis.title = element_blank(),
     panel.grid = element_blank(),
     panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8),
     strip.background = element_rect(fill = "grey90", colour = "black"),
-    strip.text = element_text(face = "bold", size = 9),
+    strip.text = element_text(face = "bold", size = 14),
     legend.position = "bottom",
-    legend.title = element_text(size = 10),
-    legend.text = element_text(size = 9)
+    legend.title = element_text(size = 18),
+    legend.text = element_text(size = 18)
   ) +
   guides(
     fill = guide_colorbar(
@@ -100,8 +100,8 @@ p <- ggplot(map_cases_sf) +
   )
 
 ggsave(
-  filename = "map_oub2.jpeg",
+  filename = "map_oub1.jpeg",
   plot = p,
-  width = 11, height = 6,
-  dpi = 1000, bg = "white"
+  width = 9, height = 7,
+  dpi = 500, bg = "white"
 )
