@@ -1,0 +1,315 @@
+---
+title: "KẾT QUẢ R(t) THEO PHƯƠNG PHÁP WALLINGA"
+author: "Anh Huynh"
+format: 
+  docx:
+    toc: true
+    number-sections: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## 1. Chuẩn bị
+
+```{r setup_data}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(reshape2)
+library(patchwork)
+
+# ====================================================================
+df_1819 <- readRDS("df_1819.rds")
+df_2425 <- readRDS("df_2425.rds")
+# ====================================================================
+
+# Chắc chắn đã sắp xếp theo ngày phát ban
+df_1819 <- df_1819 %>% arrange(ngay_nv)  
+df_2425 <- df_2425 %>% arrange(ngay_nv) 
+
+# Thông số Serial Interval của Sởi
+si_mean <- 14.5
+si_sd <- 3.25
+si_var <- si_sd^2
+shape_val <- (si_mean^2) / si_var
+scale_val <- si_var / si_mean
+
+tuoi_levels <- c("<1", "1-5", "6-10", "11-15", ">15")
+```
+
+```{r calc_1819}
+# TÍNH TOÁN 2018-2019
+t_num <- as.numeric(df_1819$ngay_nv)
+delta_t_mat <- outer(t_num, t_num, function(i, j) j - i)
+
+W_mat <- dgamma(delta_t_mat, shape = shape_val, scale = scale_val)
+W_mat[delta_t_mat <= 0] <- 0
+col_sums <- colSums(W_mat, na.rm = TRUE)
+P_mat <- sweep(W_mat, 2, col_sums, FUN = "/")
+P_mat[is.na(P_mat)] <- 0
+rm(W_mat); gc()
+
+df_1819$R_i <- rowSums(P_mat, na.rm = TRUE)
+
+Rt_time_series <- df_1819 %>%
+  group_by(ngay_nv) %>%
+  summarise(
+    so_ca = n(),
+    rt = mean(R_i, na.rm = TRUE),
+    se_Rt = sqrt(rt / so_ca),
+    q1_rt = rt - 1.96 * se_Rt,
+    q3_rt = rt + 1.96 * se_Rt,
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    q1_rt = ifelse(is.na(q1_rt), rt, pmax(0, q1_rt)),
+    q3_rt = ifelse(is.na(q3_rt), rt, q3_rt)
+  )
+
+R_matrix_1819 <- matrix(0, nrow = length(tuoi_levels), ncol = length(tuoi_levels))
+rownames(R_matrix_1819) <- tuoi_levels; colnames(R_matrix_1819) <- tuoi_levels
+for (nguon in tuoi_levels) {
+  for (nhan in tuoi_levels) {
+    idx_nguon <- which(df_1819$nhom_tuoi == nguon)
+    idx_nhan <- which(df_1819$nhom_tuoi == nhan)
+    sum_P <- sum(P_mat[idx_nguon, idx_nhan], na.rm = TRUE)
+    n_cases_nguon <- length(idx_nguon)
+    if (n_cases_nguon > 0) R_matrix_1819[nguon, nhan] <- sum_P / n_cases_nguon
+  }
+}
+```
+
+```{r calc_2425}
+# TÍNH TOÁN 2024-2025
+t_num2 <- as.numeric(df_2425$ngay_nv)
+delta_t_mat2 <- outer(t_num2, t_num2, function(i, j) j - i)
+
+W_mat2 <- dgamma(delta_t_mat2, shape = shape_val, scale = scale_val)
+W_mat2[delta_t_mat2 <= 0] <- 0
+col_sums2 <- colSums(W_mat2, na.rm = TRUE)
+P_mat2 <- sweep(W_mat2, 2, col_sums2, FUN = "/")
+P_mat2[is.na(P_mat2)] <- 0
+rm(W_mat2); gc()
+
+df_2425$R_i <- rowSums(P_mat2, na.rm = TRUE)
+
+Rt_time_series2 <- df_2425 %>%
+  group_by(ngay_nv) %>%
+  summarise(
+    so_ca = n(),
+    rt = mean(R_i, na.rm = TRUE),
+    se_Rt = sqrt(rt / so_ca),
+    q1_rt = rt - 1.96 * se_Rt,
+    q3_rt = rt + 1.96 * se_Rt,
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    q1_rt = ifelse(is.na(q1_rt), rt, pmax(0, q1_rt)),
+    q3_rt = ifelse(is.na(q3_rt), rt, q3_rt)
+  )
+
+R_matrix_2425 <- matrix(0, nrow = length(tuoi_levels), ncol = length(tuoi_levels))
+rownames(R_matrix_2425) <- tuoi_levels; colnames(R_matrix_2425) <- tuoi_levels
+for (nguon2 in tuoi_levels) {
+  for (nhan2 in tuoi_levels) {
+    idx_nguon2 <- which(df_2425$nhom_tuoi == nguon2)
+    idx_nhan2 <- which(df_2425$nhom_tuoi == nhan2)
+    sum_P2 <- sum(P_mat2[idx_nguon2, idx_nhan2], na.rm = TRUE)
+    n_cases_nguon2 <- length(idx_nguon2)
+    if (n_cases_nguon2 > 0) R_matrix_2425[nguon2, nhan2] <- sum_P2 / n_cases_nguon2
+  }
+}
+```
+
+## 2. Diễn tiến Rt chung toàn Thành phố
+
+```{r plot_overall_rt, fig.width=10, fig.height=8}
+plot_rt_chung <- function(data_rt, title_text) {
+  ggplot(data_rt, aes(x = ngay_nv, y = rt)) +
+    geom_line(color = "steelblue", linewidth = 1) +
+    # Thêm đường xu hướng (Trend line) cho dễ nhìn
+    geom_smooth(method = "loess", color = "darkorange", se = FALSE, linetype = "dotted") +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 1) +
+    theme_minimal() +
+    labs(title = title_text, x = "Ngày phát ban", y = "Hệ số lây (Rt) trung bình") +
+    theme(
+      plot.title = element_text(face = "bold", size = 12, hjust = 0.5),
+      axis.title = element_text(face = "bold")
+    )
+}
+
+p_chung_1 <- plot_rt_chung(Rt_time_series_clean, "Đợt dịch 2018-2019")
+p_chung_2 <- plot_rt_chung(Rt_time_series2_clean, "Đợt dịch 2024-2025")
+p_chung_1 / p_chung_2
+```
+
+## 3. Kết quả Ma trận lây nhiễm chéo giữa các nhóm tuổi
+
+```{r plot_heatmap_horizontal, fig.width=10, fig.height=5}
+# Hàm vẽ Heatmap ô vuông siêu xịn
+draw_heatmap_pro <- function(matrix_data, title_text) {
+  
+  hm_data <- as.data.frame(as.table(matrix_data))
+  colnames(hm_data) <- c("Nhom_nguon", "Nhom_nhan", "R_value")
+  
+  hm_data$Nhom_nguon <- factor(hm_data$Nhom_nguon, levels = rev(tuoi_levels))
+  hm_data$Nhom_nhan <- factor(hm_data$Nhom_nhan, levels = tuoi_levels)
+  
+  ggplot(hm_data, aes(x = Nhom_nhan, y = Nhom_nguon, fill = R_value)) +
+    geom_tile(color = "white", linewidth = 1) +
+    # Mẹo đổi màu chữ: R_value > 0.25 (ô đậm) thì chữ Trắng, ngược lại chữ Đen
+    geom_text(aes(label = sprintf("%.3f", R_value), 
+                  color = R_value > 0.25), 
+              size = 3.5, fontface = "bold", show.legend = FALSE) +
+    scale_color_manual(values = c("black", "white")) +
+    # Hệ gradient Vàng -> Cam -> Đỏ đậm chuẩn khoa học
+    scale_fill_gradientn(
+      colors = c("#FFFFCC", "#FFEDA0", "#FEB24C", "#E31A1C", "#800026"),
+      name = "Hệ số lây (R)", limits = c(0, 0.35)
+    ) +
+    # QUAN TRỌNG: Ép các ô ma trận thành hình vuông tuyệt đối
+    coord_fixed(ratio = 1) +
+    theme_minimal() +
+    labs(
+      title = title_text,
+      x = "Nhóm bị lây (F1)",
+      y = "Nhóm lây bệnh (F0)"
+    ) +
+    theme(
+      axis.text = element_text(size = 10, face = "bold", color = "black"),
+      axis.title = element_text(size = 11, face = "bold"),
+      plot.title = element_text(size = 12, face = "bold", hjust = 0.5),
+      panel.grid = element_blank(), # Tắt các đường kẻ lưới thừa
+      legend.key.width = unit(2, "cm") # Kéo dài thanh legend cho đẹp
+    )
+}
+
+p1 <- draw_heatmap_pro(R_matrix_1819, "Đợt dịch 2018-2019")
+p2 <- draw_heatmap_pro(R_matrix_2425, "Đợt dịch 2024-2025")
+
+
+(p1 | p2) + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+```
+
+## 4. Diễn tiến hệ số lây nhiễm (Rt) theo thời gian và nhóm tuổi
+
+### 4.1. Đợt dịch 2018 - 2019
+
+```{r plot_facet_1819, fig.width=9, fig.height=12}
+Rt_age_1819 <- df_1819 %>%
+  group_by(ngay_nv, nhom_tuoi) %>%
+  summarise(Rt_trung_binh = mean(R_i, na.rm = TRUE), .groups = 'drop')
+
+Rt_age_1819$nhom_tuoi <- factor(Rt_age_1819$nhom_tuoi, levels = tuoi_levels)
+
+ggplot(Rt_age_1819, aes(x = ngay_nv, y = Rt_trung_binh, color = nhom_tuoi)) +
+  geom_line(size = 0.8, alpha = 0.7) +
+  geom_point(size = 1) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  # Xếp dọc thành 1 cột
+  facet_grid(rows = vars(nhom_tuoi), scales = "free_y", switch = "y") + 
+  theme_bw() +
+  labs(
+    title = "Đợt dịch 2018-2019",
+    x = "Ngày nhập viện",
+    y = "Giá trị Rt trung bình"
+  ) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 12, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.text = element_text(size = 13, color = "black"),
+    strip.background = element_rect(fill = "lightblue", color="black")
+  )
+```
+
+### 4.2. Đợt dịch 2024 - 2025
+
+```{r plot_facet_2425, fig.width=9, fig.height=12}
+Rt_age_2425 <- df_2425 %>%
+  group_by(ngay_nv, nhom_tuoi) %>%
+  summarise(Rt_trung_binh = mean(R_i, na.rm = TRUE), .groups = 'drop')
+
+Rt_age_2425$nhom_tuoi <- factor(Rt_age_2425$nhom_tuoi, levels = tuoi_levels)
+
+ggplot(Rt_age_2425, aes(x = ngay_nv, y = Rt_trung_binh, color = nhom_tuoi)) +
+  geom_line(size = 0.8, alpha = 0.7) +
+  geom_point(size = 1) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  # Xếp dọc thành 1 cột
+  facet_grid(rows = vars(nhom_tuoi), scales = "free_y", switch = "y") + 
+  theme_bw() +
+  labs(
+    title = "Đợt dịch 2024-2025",
+    x = "Ngày nhập viện",
+    y = "Giá trị Rt trung bình"
+  ) +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(size = 12, face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+    axis.text = element_text(size = 13, color = "black"),
+    strip.background = element_rect(fill = "lightblue", color="black")
+  )
+```
+
+**Nhận xét:** Sự bùng nổ của nhóm <1 tuổi và 11-15 tuổi trong đợt dịch 2024-2025 cho thấy rõ khoảng trống miễn dịch đặc thù do sụt giảm kháng thể mẹ truyền và đứt gãy tiêm chủng trong đại dịch. Các biện pháp can thiệp đã ép thành công đồ thị lây nhiễm của tất cả các nhóm về ngưỡng an toàn ($R_t < 1$) ở giai đoạn cuối đợt dịch.
+
+## 5. Bản đồ nhiệt (Heatmap) lây nhiễm theo Không gian và Thời gian
+
+*(Ghi chú: Phân tích theo từng ngày phát ban. 14 ngày đầu và cuối chuỗi đã được loại bỏ do hiệu ứng rìa của phương pháp ước lượng Wallinga).*
+
+### 5.1. Heatmap Quận/Huyện đợt dịch 2018 - 2019 (Theo ngày)
+
+```{r heatmap_qh_1819_daily, fig.width=12, fig.height=8}
+rt_qh_1819 <- df_1819 %>%
+  filter(!is.na(quan_huyen) & quan_huyen != "") %>%
+  filter(ngay_nv >= min(ngay_nv) + 14, ngay_nv <= max(ngay_nv) - 14) %>%
+  # Gom nhóm trực tiếp theo ngay_nv, không ép về tháng nữa
+  group_by(quan_huyen, ngay_nv) %>%
+  summarise(Rt_mean = mean(R_i, na.rm = TRUE), .groups = 'drop')
+
+ggplot(rt_qh_1819, aes(x = ngay_nv, y = quan_huyen, fill = Rt_mean)) +
+  # Tắt viền (color = NA) vì các ô ngày rất mỏng, nếu có viền sẽ bị đen đặc
+  geom_tile(color = NA) +
+  scale_fill_gradient2(
+    low = "#3182bd", mid = "white", high = "#de2d26", midpoint = 1,
+    na.value = "gray95", name = "Hệ số lây (Rt)", limits = c(0, max(rt_qh_1819$Rt_mean, na.rm=T))
+  ) +
+  # Dù vẽ theo ngày, trục X vẫn nhảy nhãn hiển thị theo tháng cho dễ đọc
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%Y") +
+  theme_minimal() + labs(x = "Ngày nhập viện", y = "Quận / Huyện") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+        axis.text.y = element_text(face = "bold"), panel.grid = element_blank(),
+        legend.position = "bottom", legend.key.width = unit(2, "cm"))
+```
+
+### 5.2. Heatmap Quận/Huyện đợt dịch 2024 - 2025 (Theo ngày)
+
+```{r}
+rt_qh_2425 <- df_2425 %>%
+  filter(!is.na(quan_huyen) & quan_huyen != "") %>%
+  filter(ngay_nv >= min(ngay_nv) + 14, ngay_nv <= max(ngay_nv) - 14) %>%
+  # Gom nhóm trực tiếp theo ngay_nv
+  group_by(quan_huyen, ngay_nv) %>%
+  summarise(Rt_mean = mean(R_i, na.rm = TRUE), .groups = 'drop')
+
+ggplot(rt_qh_2425, aes(x = ngay_nv, y = quan_huyen, fill = Rt_mean)) +
+  # Tắt viền (color = NA)
+  geom_tile(color = NA) +
+  scale_fill_gradient2(
+    low = "#3182bd", mid = "white", high = "#de2d26", midpoint = 1,
+    na.value = "gray95", name = "Hệ số lây (Rt)", limits = c(0, max(rt_qh_2425$Rt_mean, na.rm=T))
+  ) +
+  # Hiển thị trục X theo tháng
+  scale_x_date(date_breaks = "1 month", date_labels = "%b-%Y") +
+  theme_minimal() + labs(x = "Ngày phát ban", y = "Quận / Huyện") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+        axis.text.y = element_text(face = "bold"), panel.grid = element_blank(),
+        legend.position = "bottom", legend.key.width = unit(2, "cm"))
+```
+

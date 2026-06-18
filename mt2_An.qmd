@@ -55,17 +55,7 @@ process_data <- function(mod_data) {
       dates = mod_data$dates[t_end],
       q1_rt = `Quantile.0.025(R)`,
       q3_rt = `Quantile.0.975(R)`,
-      rt = `Mean(R)`,
-      b_posterior = `Std(R)`^2 / `Mean(R)`,
-      a_posterior = `Mean(R)` / b_posterior,
-      pct = pgamma(1, shape = a_posterior, scale = b_posterior, lower.tail = FALSE),
-      pl = case_when(
-        pct > 0.9 ~ "tim",
-        pct > 0.75 & pct <= 0.9 ~ "do",
-        pct > 0.25 & pct <= 0.75 ~ "cam",
-        pct > 0.1 & pct <= 0.25 ~ "vang",
-        pct < 0.1 ~ "xanh"
-      )
+      rt = `Mean(R)`
     )
   
   return(df_rt)
@@ -143,7 +133,7 @@ get_ccf <- function(x, y, max_lag = 5) {
 #| message: false
 
 df <- readxl::read_xlsx("data.xlsx",
-                        sheet = "data",
+                        sheet = "data_gop",
                         col_types = "text")
 
 df <- df %>% clean_names()
@@ -153,7 +143,7 @@ date_cols <- c("ngay_sinh", "ngay_kp", "ngay_nv", "ngay_bc")
 df[date_cols] <- lapply(df[date_cols], convert_excel_mixed_date)
 ```
 
-## 2. Epidemic trend
+  ## 2. Epidemic trend
 
 ```{r}
 ggplot(df %>% filter(!is.na(ngay_nv)), aes(x = ngay_nv)) +
@@ -213,7 +203,7 @@ df <- df %>% mutate(
     sex = gioi,
     diagnosis = pl_chan_doan,
     complication = bien_chung,
-    vaccination = tc,
+    vaccination = tiem_chung,
     dates = ngay_kp,
     admission = ngay_nv,
     report = ngay_bc
@@ -276,8 +266,8 @@ df <- df %>% filter(
 ## 4. Esstimate Rt of Ob1
 
 ```{r}
-ob1_case <- df %>% 
-  filter(dates>="2018-01-01" & dates<="2020-03-31") %>%
+ob1_case <- df_cases %>% 
+  filter(episode==1) %>%
   group_by(dates) %>% 
   summarise(I = n())
 
@@ -378,7 +368,7 @@ ob2_case <- df %>%
   summarise(I = n())
 
 ob2_rt <- df %>% 
-  filter(dates>="2024-05-28") %>% 
+  filter(dates>="2024-05-27") %>% 
   group_by(dates) %>% 
   summarise(I = n())
 

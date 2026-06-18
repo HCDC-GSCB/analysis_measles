@@ -1,0 +1,840 @@
+---
+title: "PHÂN TÍCH VÀ SO SÁNH HỆ SỐ LÂY NHIỄM SỞI (18-19 & 24-25)"
+author: "Anh Huynh"
+format: 
+  docx:
+    toc: false
+    number-sections: true
+execute:
+  echo: false
+  warning: false
+  message: false
+knitr:
+  opts_chunk:
+    fig.path: "images/"   
+    fig.format: "png"       
+    fig.dpi: 300
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+library(EpiEstim)
+library(patchwork)
+library(sf)
+library(viridis)
+library(ggspatial)
+library(ggsci)
+
+# ==========================================
+# 0. CHUẨN BỊ DỮ LIỆU
+# ==========================================
+
+df_1819 <- readRDS("df_1819.rds")
+df_2425 <- readRDS("df_2425.rds")
+
+# Khai báo biến toàn cục
+si_mean <- 14.5
+si_sd <- 3.25
+shape_val <- (si_mean^2) / (si_sd^2)
+scale_val <- (si_sd^2) / si_mean
+tuoi_levels <- c("<1", "1-5", "6-10", "11-15", ">15")
+
+# Hàm xử lý kết quả Cori (Của mày)
+process_cori <- function(mod_data) {
+  mod_data$R %>%
+    mutate(
+      ngay_nv = mod_data$dates[t_end],
+      q1_rt = `Quantile.0.025(R)`,
+      q3_rt = `Quantile.0.975(R)`,
+      rt = `Mean(R)`,
+      method = "Cori et al."
+    ) %>%
+    select(ngay_nv, rt, q1_rt, q3_rt, method)
+}
+```
+
+```{r calc_models, include=FALSE}
+# ==========================================
+# 1. TÍNH TOÁN CORI VÀ WALLINGA CHO 18-19
+# ==========================================
+# CORI 18-19
+ob1_incid <- df_1819 %>% group_by(ngay_nv) %>% summarise(I = n()) %>%
+  complete(ngay_nv = seq(min(ngay_nv), max(ngay_nv), by = "day"), fill = list(I = 0))
+t_start1 <- seq(2, nrow(ob1_incid) - 13)
+mod1 <- estimate_R(incid = ob1_incid %>% 
+                     rename(dates = ngay_nv), method = "parametric_si", 
+                   config = make_config(list(mean_si = si_mean, std_si = si_sd, 
+                                             t_start = t_start1, t_end = t_start1 + 13)))
+cori_1819 <- process_cori(mod1) %>% mutate(outbreak = "2018-2020") %>%  
+  filter(ngay_nv >= min(ngay_nv >= min(ngay_nv), ngay_nv <= max(ngay_nv) - 14))
+
+# WALLINGA 18-20
+t1 <- as.numeric(df_1819$ngay_nv)
+delta1 <- outer(t1, t1, `-`)
+W1 <- dgamma(delta1, shape = shape_val, scale = scale_val); W1[delta1 <= 0] <- 0
+# P1 <- sweep(W1, 2, colSums(W1, na.rm = TRUE), `/`); P1[is.na(P1)] <- 0
+# df_1819$R_i <- rowSums(P1, na.rm = TRUE)
+P1 <- sweep(W1, 2, rowSums(W1, na.rm = TRUE), `/`); P1[is.na(P1)] <- 0
+df_1819$R_i <- colSums(P1, na.rm = TRUE)
+
+wal_overall_1819 <- df_1819 %>% 
+  group_by(ngay_nv) %>%
+  summarise(so_ca = n(), rt = mean(R_i, na.rm=T), 
+            se = sqrt(rt/so_ca), .groups='drop') %>%
+  mutate(q1_rt = pmax(0, rt - 1.96*se), q3_rt = rt + 1.96*se, method = "Wallinga & Teunis", outbreak = "2018-2020") %>%
+  filter(ngay_nv >= min(ngay_nv) + 14, ngay_nv <= max(ngay_nv) - 14) 
+
+wal_age_1819 <- df_1819 %>% 
+  group_by(ngay_nv, nhom_tuoi) %>%
+  summarise(so_ca = n(), rt = mean(R_i, na.rm=T), 
+            se = sqrt(rt/so_ca), .groups='drop') %>%
+  mutate(q1_rt = pmax(0, rt - 1.96*se), q3_rt = rt + 1.96*se, outbreak = "2018-2020") %>%
+  filter(ngay_nv >= min(ngay_nv) + 14, ngay_nv <= max(ngay_nv) - 14)
+
+# ==========================================
+# 2. TÍNH TOÁN CORI VÀ WALLINGA CHO 24-25
+# ==========================================
+# CORI 24-25
+ob2_incid <- df_2425 %>% group_by(ngay_nv) %>% 
+  summarise(I = n()) %>%
+  complete(ngay_nv = seq(min(ngay_nv), max(ngay_nv), by = "day"), fill = list(I = 0))
+t_start2 <- seq(2, nrow(ob2_incid) - 13)
+mod2 <- estimate_R(incid = ob2_incid %>% 
+                     rename(dates = ngay_nv), method = "parametric_si", 
+                   config = make_config(list(mean_si = si_mean, std_si = si_sd, 
+                                             t_start = t_start2, t_end = t_start2 + 13)))
+cori_2425 <- process_cori(mod2) %>% 
+  mutate(outbreak = "2024-2025") %>%  
+  filter(ngay_nv >= min(ngay_nv), ngay_nv <= max(ngay_nv) - 14)
+
+# WALLINGA 24-25
+t2 <- as.numeric(df_2425$ngay_nv)
+delta2 <- outer(t2, t2, `-`)
+W2 <- dgamma(delta2, shape = shape_val, scale = scale_val); W2[delta2 <= 0] <- 0
+# P2 <- sweep(W2, 2, colSums(W2, na.rm = TRUE), `/`); P2[is.na(P2)] <- 0
+# df_2425$R_i <- rowSums(P2, na.rm = TRUE)
+P2 <- sweep(W2, 2, rowSums(W2, na.rm = TRUE), `/`); P2[is.na(P2)] <- 0
+df_2425$R_i <- colSums(P2, na.rm = TRUE)
+
+wal_overall_2425 <- df_2425 %>% 
+  group_by(ngay_nv) %>%
+  summarise(so_ca = n(), rt = mean(R_i, na.rm=T), 
+            se = sqrt(rt/so_ca), .groups='drop') %>%
+  mutate(q1_rt = pmax(0, rt - 1.96*se), q3_rt = rt + 1.96*se, method = "Wallinga & Teunis", outbreak = "2024-2025") %>%
+  filter(ngay_nv >= min(ngay_nv) + 14, ngay_nv <= max(ngay_nv) - 14)
+
+wal_age_2425 <- df_2425 %>% 
+  group_by(ngay_nv, nhom_tuoi) %>%
+  summarise(so_ca = n(), rt = mean(R_i, na.rm=T), 
+            se = sqrt(rt/so_ca), .groups='drop') %>%
+  mutate(q1_rt = pmax(0, rt - 1.96*se), q3_rt = rt + 1.96*se, outbreak = "2024-2025") %>%
+  filter(ngay_nv >= min(ngay_nv) + 14, ngay_nv <= max(ngay_nv) - 14) 
+```
+
+## 1. Epidemic curves
+
+```{r}
+timeline_1819 <- data.frame(
+  category = factor(c("Time of the outbreak", "Vaccination campaign", "Time from start to peak"),
+                    levels = c("Time of the outbreak", "Vaccination campaign", "Time from start to peak")),
+  start = as.Date(c("2018-08-27", "2018-12-01", "2018-08-27")),
+  end = as.Date(c("2020-03-31", "2019-05-31", "2019-01-31")),
+  label = c("19.1 months", "Non-selective (6 months)", "5.1 months"),
+  color_group = c("outbreak", "vax", "peak")
+)
+
+timeline_2425 <- data.frame(
+  category = factor(c("Time of the outbreak", "Vaccination campaign", "Time from start to peak"),
+                    levels = c("Time of the outbreak", "Vaccination campaign", "Time from start to peak")),
+  start = as.Date(c("2024-05-28", "2024-08-31", "2024-05-28")),
+  end = as.Date(c("2025-12-03", "2025-03-31", "2025-01-06")),
+  label = c("18.2 months", "Selective (7 months)", "7.3 months"),
+  color_group = c("outbreak", "vax", "peak")
+)
+
+build_epidemic_panel <- function(df_cases, df_timeline, title_label, x_limits, date_breaks_val, x_title = NULL) {
+  
+  all_milestones <- unique(c(df_timeline$start, df_timeline$end))
+  
+  p_curve <- df_cases %>% 
+    group_by(ngay_nv) %>% 
+    summarise(cases = n(), .groups = "drop") %>%
+    ggplot(aes(x = ngay_nv, y = cases)) +
+    geom_col(fill = "#415A77", width = 1) +
+    
+    geom_vline(xintercept = all_milestones, linetype = "dashed", color = "gray75", linewidth = 0.5) +
+
+    geom_vline(xintercept = df_timeline$end[df_timeline$category == "Time from start to peak"], 
+               linetype = "solid", color = "darkred", linewidth = 0.8) +
+               
+    scale_x_date(limits = x_limits, date_breaks = date_breaks_val, date_labels = "%m/%Y") +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+    labs(title = title_label, x = NULL, y = "Number of cases") +
+    theme_classic(base_size = 14) +
+    theme(
+      plot.title = element_text(face = "bold", size = 16),
+
+      axis.title.y = element_text(face = "bold", margin = margin(r = 10)), 
+      axis.text.x = element_blank(), 
+      axis.ticks.x = element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid.major.y = element_line(color = "gray95", linetype = "solid")
+    )
+  
+  
+  p_time <- ggplot(df_timeline) +
+
+    geom_vline(xintercept = all_milestones, linetype = "dashed", color = "gray75", linewidth = 0.5) +
+    
+    geom_segment(aes(x = start, xend = end, y = category, yend = category, color = color_group), 
+                 linewidth = 3.5, lineend = "butt") +
+    geom_text(aes(x = start + (end - start)/2, y = category, label = label), 
+              vjust = -0.7, size = 4.2, fontface = "bold") +
+              
+    scale_color_manual(values = c("outbreak" = "#5A5A5A", "vax" = "#2a9d8f", "peak" = "#e76f51")) +
+   
+     scale_x_date(limits = x_limits, date_breaks = date_breaks_val, date_labels = "%m/%Y") +
+    
+    scale_y_discrete(expand = expansion(mult = c(0.15, 0.45))) +
+    
+    labs(x = x_title, y = NULL) +
+    
+    coord_cartesian(clip = "off") +
+    
+    theme_classic(base_size = 14) +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 11),
+      axis.text.y = element_text(face = "bold", size = 11),
+      axis.title.x = element_text(face = "bold", margin = margin(t = 10)),
+      axis.line.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.background = element_rect(fill = "transparent", color = NA),
+      plot.background = element_rect(fill = "transparent", color = NA)
+    )
+  
+  combined <- p_curve / p_time + plot_layout(heights = c(3.7, 2.3))
+  return(combined)
+}
+
+lims_1819 <- c(as.Date("2018-08-15"), as.Date("2020-04-15"))
+panel_A <- build_epidemic_panel(df_cases = df_1819, 
+                                df_timeline = timeline_1819, 
+                                title_label = "(A) Outbreak 2018-2020", 
+                                x_limits = lims_1819, 
+                                date_breaks_val = "1 month",
+                                x_title = NULL) 
+
+lims_2425 <- c(as.Date("2024-05-15"), as.Date("2025-12-31"))
+panel_B <- build_epidemic_panel(df_cases = df_2425, 
+                                df_timeline = timeline_2425, 
+                                title_label = "(B) Outbreak 2024-2025", 
+                                x_limits = lims_2425, 
+                                date_breaks_val = "1 month",
+                                x_title = "Date admission") 
+
+caption_text <- "Vaccination campaign age groups:\nOutbreak 2018-2020: 1-5 years | Outbreak 2024-2025: 1-5 years, 6-10 years, 6-9 months"
+
+final_plot <- (wrap_elements(full = panel_A) / wrap_elements(full = panel_B)) +
+  plot_annotation(
+    caption = caption_text,
+    theme = theme(
+      plot.caption = element_text(hjust = 1, size = 12, face = "italic", color = "black", margin = margin(t = 15))
+    )
+  )
+
+final_plot
+```
+
+## 2. Cases by are group
+
+```{r}
+age_levels <- c("<1", "1-5", "6-10", "11-15", ">15")
+
+my_colors <- c("<1" = "#4575b4", 
+               "1-5" = "#91bfdb", 
+               "6-10" = "#fee090", 
+               "11-15" = "#fc8d59", 
+               ">15" = "#d73027")
+
+
+plot_age_dist <- function(df, title_text) {
+  df %>%
+    mutate(
+      month_yr = floor_date(ngay_nv, "month"),
+      nhom_tuoi = factor(nhom_tuoi, levels = age_levels)
+    ) %>%
+    group_by(month_yr, nhom_tuoi) %>%
+    summarise(cases = n(), .groups = "drop") %>%
+    ggplot(aes(x = month_yr, y = cases, fill = nhom_tuoi)) +
+    
+    geom_col(position = position_fill(reverse = TRUE), width = 25, color = "white", linewidth = 0.2) + 
+    
+    scale_fill_manual(values = my_colors) +
+    scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+    
+    scale_x_date(date_breaks = "1 month", date_labels = "%m/%y", expand = expansion(mult = c(0.02, 0.02))) +
+    
+    labs(
+      title = title_text,
+      x = NULL,
+      y = NULL,
+      fill = "Age group"
+    ) +
+    
+    theme_bw(base_size = 14) +
+    theme(
+      plot.title = element_text(face = "bold", hjust = 0, size = 16),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 12, color = "black"),
+      axis.text.y = element_text(size = 12, color = "black"),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold", size = 14),
+      legend.text = element_text(size = 13),
+      panel.grid.minor = element_blank(),
+      panel.grid.major.x = element_blank(), 
+      panel.border = element_rect(color = "black", linewidth = 0.8)
+    )
+}
+
+p_A <- plot_age_dist(df_1819, "(A) Outbreak 2018-2020")
+p_B <- plot_age_dist(df_2425, "(B) Outbreak 2024-2025")
+
+final_plot <- p_A / p_B + 
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+
+final_plot
+```
+
+```{r}
+age_levels <- c("<1", "1-5", "6-10", "11-15", ">15")
+
+pal_1819 <- c("<1" = "#4575B4",     
+              "1-5" = "#D73027",    
+              "6-10" = "#FC8D59",   
+              "11-15" = "#FEE090",  
+              ">15" = "#BDBDBD")   
+
+pal_2425 <- c("<1" = "#BDBDBD",    
+              "1-5" = "#4575B4",    
+              "6-10" = "#D73027", 
+              "11-15" = "#FC8D59",  
+              ">15" = "#FEE090")    
+
+
+plot_age_dist <- function(df, title_text, custom_pal) {
+    df %>%
+        mutate(
+            month_yr = floor_date(ngay_nv, "month"),
+            nhom_tuoi = factor(nhom_tuoi, levels = age_levels)
+        ) %>%
+        group_by(month_yr, nhom_tuoi) %>%
+        summarise(cases = n(), .groups = "drop") %>%
+        ggplot(aes(x = month_yr, y = cases, fill = nhom_tuoi)) +
+        
+        geom_col(position = position_fill(reverse = TRUE), width = 25, color = "white", linewidth = 0.2) + 
+        
+        scale_fill_manual(values = custom_pal) +
+        scale_y_continuous(labels = percent_format(), expand = c(0, 0)) +
+        scale_x_date(date_breaks = "1 month", date_labels = "%m/%y", expand = expansion(mult = c(0.02, 0.02))) +
+        
+        labs(
+            title = title_text,
+            x = NULL,
+            y = NULL,
+            fill = "Age group"
+        ) +
+        
+        theme_bw(base_size = 14) +
+        theme(
+            plot.title = element_text(face = "bold", hjust = 0, size = 16),
+            axis.text.x = element_text(angle = 45, hjust = 1, size = 12, color = "black"),
+            axis.text.y = element_text(size = 12, color = "black"),
+            legend.position = "right", 
+            legend.title = element_text(face = "bold", size = 14),
+            legend.text = element_text(size = 13),
+            panel.grid.minor = element_blank(),
+            panel.grid.major.x = element_blank(), 
+            panel.border = element_rect(color = "black", linewidth = 0.8)
+        )
+}
+
+p_A <- plot_age_dist(df_1819, "(A) Cohort tracking 2018 - 2020", pal_1819)
+p_B <- plot_age_dist(df_2425, "(B) Cohort tracking 2024 - 2025", pal_2425)
+
+final_plot <- p_A / p_B 
+
+final_plot
+```
+
+## 3. Cummulative incidence per 100k population
+
+```{r}
+df_1819 <- df_1819 |> mutate(outbreak = "2018-2020")
+df_2425 <- df_1819 |> mutate(outbreak = "2024-2025")
+
+df_combined <- bind_rows(df_1819, df_2425)
+num_phases <- 6 
+
+phase_info <- df_combined %>%
+  group_by(outbreak) %>%
+  summarise(
+    start_date = min(ngay_nv),
+    end_date = max(ngay_nv),
+    total_days = as.numeric(difftime(max(ngay_nv), min(ngay_nv), units = "days")),
+    days_per_phase = round(total_days / num_phases),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    start_str = paste(month.abb[month(start_date)], year(start_date)),
+    end_str = paste(month.abb[month(end_date)], year(end_date)),
+    info_text = paste0(outbreak, " (", start_str, " to ", end_str, "): ~", days_per_phase, " days/phase")
+  )
+
+caption_text <- paste(
+  paste0("Note: Each outbreak period is divided into ", num_phases, " equal phases."),
+  paste(phase_info$info_text, collapse = "\n"),
+  sep = "\n"
+)
+
+cases_agg <- df_combined %>%
+  group_by(outbreak) %>%
+  mutate(
+    period = cut(ngay_nv, breaks = num_phases, labels = paste("Phase", 1:num_phases))
+  ) %>%
+  ungroup() %>%
+  group_by(outbreak, quan_huyen, period) %>%
+  summarise(new_cases = n(), .groups = "drop") %>%
+  complete(quan_huyen, nesting(outbreak, period), fill = list(new_cases = 0)) %>%
+  arrange(outbreak, quan_huyen, period) %>%
+  group_by(outbreak, quan_huyen) %>%
+  mutate(cum_cases = cumsum(new_cases)) %>%
+  ungroup()
+
+pop <- readxl::read_excel("pop.xlsx") %>%
+  mutate(across(starts_with("pop_"), as.numeric)) %>%
+  select(quan_huyen, pop_2019, pop_2024)
+
+map_hcm <- st_read("gadm41_VNM.gpkg", layer = "ADM_ADM_2") %>%
+  filter(NAME_1 == "Hồ Chí Minh") %>%
+  mutate(NAME_2 = case_when(
+    NAME_2 %in% c("Thủ Đức", "Quận 9", "Quận 2") ~ "Thành phố Thủ Đức",
+    TRUE ~ NAME_2
+  )) %>%
+  group_by(NAME_2) %>%
+  summarise(geometry = st_union(geom), .groups = "drop") %>%
+  rename(quan_huyen = NAME_2)
+
+cases_full <- cases_agg %>%
+  left_join(pop, by = "quan_huyen") %>%
+  mutate(
+    pop_used = ifelse(outbreak == "2018-2020", pop_2019, pop_2024),
+    incidence_rate = (cum_cases / pop_used) * 100000
+  )
+
+map_cases_sf <- map_hcm %>%
+  right_join(cases_full, by = "quan_huyen", relationship = "many-to-many") %>%
+  mutate(
+    fill_var1 = ifelse(incidence_rate == 0, NA, incidence_rate)
+  )
+
+p <- ggplot(map_cases_sf) +
+  geom_sf(aes(fill = fill_var1), color = "black", size = 0.25) +
+  scale_fill_gsea(
+    name = "Cumulative incidence\n(per 100,000 population)",
+    na.value = "white",
+    limits = c(0, max(map_cases_sf$fill_var1, na.rm = TRUE))
+  ) +
+  facet_grid(outbreak ~ period) +
+  
+  labs(caption = caption_text) +
+  
+  theme_minimal(base_size = 15) +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8),
+    strip.background = element_rect(fill = "grey90", colour = "black"),
+    strip.text = element_text(face = "bold", size = 13),
+    legend.position = "bottom",
+    legend.title = element_text(size = 14, face = "bold"),
+    legend.text = element_text(size = 12),
+    plot.caption = element_text(hjust = 0, size = 12, face = "italic", color = "grey30", margin = margin(t = 15))
+  ) +
+  guides(
+    fill = guide_colorbar(
+      barwidth = 20, barheight = 0.8,
+      ticks.colour = "black",
+      label.position = "bottom",
+      title.position = "top",
+      title.hjust = 0.5
+    )
+  )
+```
+
+## 4. Diễn tiến lây nhiễm chung toàn Thành phố (So sánh phương pháp)
+
+```{r Figure 4, fig.width=15, fig.height=10, dpi=300}
+# 1. Gộp 4 bộ dữ liệu Rt thành 1 để xài facet gọn gàng
+df_overall <- bind_rows(cori_1819, wal_overall_1819, cori_2425, wal_overall_2425)
+
+# 2. Tính số ca bệnh theo ngày cho từng đợt dịch (Giữ nguyên toàn bộ data)
+df_cases <- bind_rows(
+  df_1819 %>% group_by(ngay_nv) %>% summarise(cases = n(), .groups = "drop"),
+  df_2425 %>% group_by(ngay_nv) %>% summarise(cases = n(), .groups = "drop")
+)
+
+# 3. Tính hệ số chuyển đổi trục Y cho biểu đồ trục kép
+max_rt_display <- 5
+max_cases <- max(df_cases$cases, na.rm = TRUE)
+scale_factor <- max_cases / 4
+
+ggplot() +
+
+  geom_col(data = df_cases, aes(x = ngay_nv, y = cases / scale_factor), 
+           fill = "#5A5A5A", alpha = 0.6, width = 1) +
+  
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black", linewidth = 0.8) +
+  geom_ribbon(data = df_overall, aes(x = ngay_nv, ymin = q1_rt, ymax = q3_rt, fill = method), alpha = 0.25, color = NA) +
+  geom_line(data = df_overall, aes(x = ngay_nv, y = rt, color = method), linewidth = 1.2) +
+  
+  facet_wrap(~ outbreak, ncol = 1, scales = "free_x") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%m/%Y") +
+  
+  scale_y_continuous(
+    name = "Rt (95% CIs)",
+    limits = c(0, max_rt_display),
+    sec.axis = sec_axis(~ . * scale_factor, name = "Cases per day")
+  ) +
+  
+  scale_color_manual(values = c("Cori et al." = "#d95f02", "Wallinga & Teunis" = "#1f78b4")) +
+  scale_fill_manual(values = c("Cori et al." = "#d95f02", "Wallinga & Teunis" = "#1f78b4")) +
+  
+  theme_bw(base_size = 18) + 
+  labs(x = "Date admission", color = "Methods", fill = "Methods") +
+  theme(
+    strip.text = element_text(face = "bold", size = 20, color = "white"),
+    strip.background = element_rect(fill = "gray30"),
+    axis.title.y.left = element_text(face = "bold", size = 18, color = "black"),
+    axis.title.y.right = element_text(face = "bold", size = 18, color = "black"),
+    axis.text.x = element_text(size = 16, color = "black", angle = 45, hjust = 1, vjust = 1),
+    axis.text.y = element_text(size = 16, color = "black"),
+    legend.title = element_text(face = "bold", size = 18),
+    legend.text = element_text(size = 18),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+#| label: statistical_comparison
+
+# Gộp dữ liệu để so sánh cặp (Paired)
+df_compare <- inner_join(
+  bind_rows(cori_1819, cori_2425) %>% select(ngay_nv, outbreak, rt_cori = rt),
+  bind_rows(wal_overall_1819, wal_overall_2425) %>% select(ngay_nv, outbreak, rt_wal = rt),
+  by = c("ngay_nv", "outbreak")
+)
+
+# Chạy test Wilcoxon cho từng đợt
+test_1819 <- wilcox.test(df_compare$rt_cori[df_compare$outbreak == "2018-2020"], 
+                         df_compare$rt_wal[df_compare$outbreak == "2018-2020"], paired = TRUE)
+
+test_2425 <- wilcox.test(df_compare$rt_cori[df_compare$outbreak == "2024-2025"], 
+                         df_compare$rt_wal[df_compare$outbreak == "2024-2025"], paired = TRUE)
+
+# Tính Median để nhận xét
+stats_summary <- df_compare %>%
+  group_by(outbreak) %>%
+  summarise(
+    med_cori = median(rt_cori),
+    med_wal = median(rt_wal),
+    p_value = ifelse(first(outbreak) == "2018-2020", test_1819$p.value, test_2425$p.value)
+  )
+
+print(stats_summary)
+```
+
+## 5. Diễn tiến Rt theo nhóm tuổi (Phương pháp Wallinga & Teunis)
+
+```{r Figure 5, fig.width=14, fig.height=10, dpi=300}
+# Gộp dữ liệu 2 đợt dịch
+df_age <- bind_rows(wal_age_1819, wal_age_2425)
+df_age$nhom_tuoi <- factor(df_age$nhom_tuoi, levels = tuoi_levels)
+
+ggplot(df_age, aes(x = ngay_nv, y = rt, color = nhom_tuoi, fill = nhom_tuoi)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+  geom_ribbon(aes(ymin = q1_rt, ymax = q3_rt), alpha = 0.2, color = NA) +
+  geom_line(linewidth = 0.8) +
+  
+  facet_grid(nhom_tuoi ~ outbreak, scales = "free_x") +
+  scale_x_date(date_breaks = "1 month", date_labels = "%m/%Y") +
+  labs(x = "Date admission", y = "Rt (95% CIs)") +
+  theme_bw() + 
+  theme(
+    legend.position = "none",
+    
+    panel.spacing.x = unit(2, "lines"), 
+    
+    strip.text.y = element_text(angle = 0, color = "black", size = 18),
+    strip.text.x = element_text(face = "bold", size = 18, color = "white"),
+    
+    axis.text.x = element_text(size = 18, color = "black", angle = 90, hjust = 1, vjust = 0.5),
+    axis.text.y = element_text(size = 18, color = "black"),
+    axis.title = element_text(size = 18, color = "black", face = "bold"),
+    
+    strip.background.x = element_rect(fill = "gray30"),
+    strip.background.y = element_rect(fill = "lightblue")
+  )
+```
+
+## 6. Bản đồ nhiệt diễn tiến Rt theo Quận/Huyện
+
+```{r}
+#| label: Figure 6
+#| fig-width: 14
+#| fig-height: 12
+
+library(ggsci) # Nạp thư viện ggsci
+
+# 1. HÀM CHUẨN BỊ DỮ LIỆU
+prep_heatmap <- function(df_data, out_name) {
+  df_data %>%
+    filter(!is.na(quan_huyen) & quan_huyen != "") %>%
+    filter(ngay_nv >= min(ngay_nv) + 14, ngay_nv <= max(ngay_nv) - 14) %>%
+    mutate(month = floor_date(ngay_nv, "month")) %>%
+    group_by(quan_huyen, month) %>%
+    summarise(rt = mean(R_i, na.rm = TRUE), cases = n(), .groups = 'drop') %>%
+    complete(quan_huyen, month, fill = list(rt = NA, cases = 0)) %>%
+    filter(!is.na(month)) %>%
+    mutate(outbreak = out_name)
+}
+
+df_dist <- bind_rows(prep_heatmap(df_1819, "2018-2020"), prep_heatmap(df_2425, "2024-2025"))
+
+# 2. PHÂN NHÓM QUẬN/HUYỆN THEO HƯỚNG ĐỊA LÝ TPHCM
+df_dist <- df_dist %>%
+  mutate(khu_vuc = case_when(
+    quan_huyen %in% c("Quận 1", "Quận 3", "Quận 4", "Quận 5", "Quận 6", 
+                      "Quận 8", "Quận 10", "Quận 11", "Phú Nhuận", 
+                      "Bình Thạnh", "Gò Vấp", "Tân Bình", "Tân Phú") ~ "Center",
+    quan_huyen == "Thành phố Thủ Đức" ~ "East",
+    quan_huyen %in% c("Bình Tân", "Bình Chánh") ~ "West",
+    quan_huyen %in% c("Quận 7", "Nhà Bè", "Cần Giờ") ~ "South",
+    quan_huyen %in% c("Quận 12", "Hóc Môn", "Củ Chi") ~ "North",
+    TRUE ~ "Chưa phân loại"
+  ))
+
+df_dist$khu_vuc <- factor(df_dist$khu_vuc, levels = c("Center", "East", "West", "South", "North"))
+df_dist <- df_dist %>% arrange(khu_vuc, quan_huyen)
+df_dist$quan_huyen <- factor(df_dist$quan_huyen, levels = unique(df_dist$quan_huyen))
+
+# 3. TẠO DỮ LIỆU CHO ĐƯỜNG CONG DỊCH (TOP PLOT)
+df_curve <- df_dist %>%
+  group_by(outbreak, month) %>%
+  summarise(total_cases = sum(cases, na.rm = TRUE), .groups = 'drop')
+
+# 4. VẼ BIỂU ĐỒ ĐƯỜNG CONG DỊCH (TOP PLOT)
+p_top <- ggplot(df_curve, aes(x = month, y = total_cases)) +
+  geom_col(fill = "#1b9e77", color = "white", linewidth = 0.2) + 
+  facet_wrap(~ outbreak, scales = "free_x") +
+  theme_void() + 
+  theme(
+    strip.text = element_blank(), 
+    strip.background = element_blank(),
+    panel.spacing = unit(2, "lines"),
+    plot.margin = margin(b = 0, t = 10, l = 5, r = 5)
+  )
+
+# 5. VẼ HEATMAP VỚI MÀU GSEA (BOTTOM PLOT)
+p_heat <- ggplot(df_dist, aes(x = month, y = quan_huyen, fill = rt)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  
+  # SỬ DỤNG THANG MÀU GSEA
+  scale_fill_gsea(
+    name = "Rt", 
+    limits = c(0, max(df_dist$rt, na.rm=T)), 
+    na.value = "gray95"
+  ) +
+  
+  facet_grid(khu_vuc ~ outbreak, scales = "free", space = "free_y") +
+  
+  scale_x_date(date_breaks = "1 month", date_labels = "%m/%Y") +
+  labs(x = "Date admission", y = "") +
+  theme_bw() + 
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.spacing.x = unit(2, "lines"),
+    panel.spacing.y = unit(0.3, "lines"),
+    
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 18, color = "black"),
+    axis.text.y = element_text(size = 14, color = "black"), 
+    axis.title = element_text(size = 18, face = "bold", color = "black"),
+    
+    strip.text.x = element_text(face = "bold", size = 20, color = "white"),
+    strip.text.y = element_text(face = "bold", size = 14, color = "black", angle = 0),
+    strip.background.x = element_rect(fill = "gray30"),
+    strip.background.y = element_rect(fill = "gray90"),
+    
+    legend.position = "bottom",
+    legend.key.width = unit(2, "cm"),
+    plot.margin = margin(t = 0, b = 5, l = 5, r = 5)
+  )
+
+# 6. GÉP 2 BIỂU ĐỒ VỚI PATCHWORK
+p_final <- p_top / p_heat + plot_layout(heights = c(1, 6))
+
+p_final
+```
+
+## 7. Ma trận tương quan lây nhiễm F0 - F1 theo nhóm tuổi
+
+```{r plot_4_matrix, fig.width=12, fig.height=6, , dpi=300}
+# # Hàm tính ma trận
+# calc_matrix <- function(df_data) {
+#   mat <- matrix(0, nrow = length(tuoi_levels), ncol = length(tuoi_levels))
+#   rownames(mat) <- tuoi_levels; colnames(mat) <- tuoi_levels
+#   
+#   t_val <- as.numeric(df_data$ngay_nv)
+#   del <- outer(t_val, t_val, `-`)
+#   W_mat <- dgamma(del, shape = shape_val, scale = scale_val); W_mat[del <= 0] <- 0
+#   P_mat <- sweep(W_mat, 2, colSums(W_mat, na.rm = TRUE), `/`); P_mat[is.na(P_mat)] <- 0
+#   
+#   for (nguon in tuoi_levels) {
+#     for (nhan in tuoi_levels) {
+#       idx_nguon <- which(df_data$nhom_tuoi == nguon)
+#       idx_nhan <- which(df_data$nhom_tuoi == nhan)
+#       if (length(idx_nguon) > 0) mat[nguon, nhan] <- sum(P_mat[idx_nguon, idx_nhan], na.rm = TRUE) / length(idx_nguon)
+#     }
+#   }
+#   
+#   df_hm <- as.data.frame(as.table(mat))
+#   colnames(df_hm) <- c("Nhom_nguon", "Nhom_nhan", "R_value")
+#   df_hm$Nhom_nguon <- factor(df_hm$Nhom_nguon, levels = rev(tuoi_levels))
+#   df_hm$Nhom_nhan <- factor(df_hm$Nhom_nhan, levels = tuoi_levels)
+#   return(df_hm)
+# }
+# 
+# df_mat <- bind_rows(
+#   calc_matrix(df_1819) %>% mutate(outbreak = "2018-2019"),
+#   calc_matrix(df_2425) %>% mutate(outbreak = "2024-2025")
+# )
+# 
+# ggplot(df_mat, aes(x = Nhom_nhan, y = Nhom_nguon, fill = R_value)) +
+#   geom_tile(color = "white", linewidth = 1) +
+#   geom_text(aes(label = sprintf("%.3f", R_value), color = R_value > 0.25), size = 4.5, fontface = "bold", show.legend = FALSE) +
+#   scale_color_manual(values = c("black", "white")) +
+#   scale_fill_gradientn(colors = c("#FFFFCC", "#FFEDA0", "#FEB24C", "#E31A1C", "#800026"), name = "Rt") +
+#   coord_fixed(ratio = 1) +
+#   facet_wrap(~ outbreak, ncol = 2) +
+#   labs(x = "F1", y = "F0") +
+#   theme(
+#     strip.text = element_text(face = "bold", size = 18, color = "white"),
+#     axis.text.x = element_text(color = "black", size = 18),
+#     axis.text.y = element_text(color = "black", size = 18),
+#     axis.title = element_text(color = "black", size = 18),
+#     legend.text = element_text(color = "black", size = 18),
+#     legend.title = element_text(color = "black", size = 18),
+#     strip.background = element_rect(fill = "gray30"),
+#     legend.position = "bottom", 
+#     legend.key.width = unit(1.5, "cm"), 
+#     panel.grid = element_blank()
+#   )
+```
+
+```{r plot_6_matrix}
+#| label: Figure 7
+#| fig-width: 14
+#| fig-height: 10
+
+# Hàm tính ma trận (Giữ nguyên logic nhưng tối ưu đầu vào)
+calc_matrix_period <- function(df_data, period_name) {
+  if(nrow(df_data) == 0) return(NULL) # Phòng hờ dữ liệu trống
+  
+  mat <- matrix(0, nrow = length(tuoi_levels), ncol = length(tuoi_levels))
+  rownames(mat) <- tuoi_levels; colnames(mat) <- tuoi_levels
+  
+  t_val <- as.numeric(df_data$ngay_nv)
+  del <- outer(t_val, t_val, `-`)
+  W_mat <- dgamma(del, shape = shape_val, scale = scale_val); W_mat[del <= 0] <- 0
+  P_mat <- sweep(W_mat, 2, colSums(W_mat, na.rm = TRUE), `/`); P_mat[is.na(P_mat)] <- 0
+  
+  for (nguon in tuoi_levels) {
+    for (nhan in tuoi_levels) {
+      idx_nguon <- which(df_data$nhom_tuoi == nguon)
+      idx_nhan <- which(df_data$nhom_tuoi == nhan)
+      if (length(idx_nguon) > 0) mat[nguon, nhan] <- sum(P_mat[idx_nguon, idx_nhan], na.rm = TRUE) / length(idx_nguon)
+    }
+  }
+  
+  df_hm <- as.data.frame(as.table(mat))
+  colnames(df_hm) <- c("Nhom_nguon", "Nhom_nhan", "R_value")
+  df_hm$Nhom_nguon <- factor(df_hm$Nhom_nguon, levels = rev(tuoi_levels))
+  df_hm$Nhom_nhan <- factor(df_hm$Nhom_nhan, levels = tuoi_levels)
+  df_hm$period <- period_name
+  return(df_hm)
+}
+
+# TÍNH TOÁN CHO 6 NHÓM
+# Đợt 2018-2019
+m1_all <- calc_matrix_period(df_1819, "Overall")
+m1_pre <- calc_matrix_period(df_1819 %>% filter(ngay_nv < "2018-12-01"), "Pre-intervention")
+m1_post <- calc_matrix_period(df_1819 %>% filter(ngay_nv >= "2018-12-01"), "Post-intervention")
+
+# Đợt 2024-2025
+m2_all <- calc_matrix_period(df_2425, "Overall")
+m2_pre <- calc_matrix_period(df_2425 %>% filter(ngay_nv < "2024-08-31"), "Pre-intervention")
+m2_post <- calc_matrix_period(df_2425 %>% filter(ngay_nv >= "2024-08-31"), "Post-intervention")
+
+# Gộp tất cả lại
+df_mat_final <- bind_rows(
+  m1_all %>% mutate(outbreak = "2018-2020"),
+  m1_pre %>% mutate(outbreak = "2018-2020"),
+  m1_post %>% mutate(outbreak = "2018-2020"),
+  m2_all %>% mutate(outbreak = "2024-2025"),
+  m2_pre %>% mutate(outbreak = "2024-2025"),
+  m2_post %>% mutate(outbreak = "2024-2025")
+)
+
+# Sắp xếp thứ tự hiển thị của Period
+df_mat_final$period <- factor(df_mat_final$period, 
+                               levels = c("Overall", "Pre-intervention", "Post-intervention"))
+
+# VẼ 6 HÌNH TRÊN 1 LƯỚI
+ggplot(df_mat_final, aes(x = Nhom_nhan, y = Nhom_nguon, fill = R_value)) +
+  geom_tile(color = "white", linewidth = 0.8) +
+  
+  # Đổi màu chữ (Trắng/Đen) tùy theo độ đậm nhạt của nền để dễ đọc
+  geom_text(aes(label = sprintf("%.3f", R_value)), color = "black", 
+            size = 5, fontface = "bold", show.legend = FALSE) +
+  
+  scale_fill_stepsn(
+    colors = c("#FFFFCC", "#FFEDA0", "#FEB24C", "#FC4E2A", "#B10026"), # 5 màu
+    breaks = c(0.15, 0.3, 0.45, 0.6), # 4 nhát cắt cách đều
+    limits = c(0, 0.65),              # Chốt max 0.65 ôm trọn 0.614
+    name = "Rt",
+    na.value = "gray95"
+  ) +
+  # =================================================================
+  
+  # SỬ DỤNG FACET_GRID ĐỂ CHIA 2 DÒNG (Đợt dịch) VÀ 3 CỘT (Giai đoạn)
+  facet_grid(outbreak ~ period) +
+  coord_fixed() +
+  theme_minimal(base_size = 18) +
+  labs(x = "F1", y = "F0") +
+  theme(
+    strip.text = element_text(face = "bold", size = 20, color = "white"),
+    strip.background = element_rect(fill = "gray30"),
+    panel.spacing = unit(1.5, "lines"),
+    legend.position = "bottom",
+    legend.key.width = unit(2.5, "cm"), # Kéo dài thanh legend ra chút cho đẹp
+    axis.text.x = element_text(color = "black", size = 18),
+    axis.text.y = element_text(color = "black", size = 18),
+    legend.text = element_text(color = "black", size = 18),
+    legend.title = element_text(color = "black", size = 18, face = "bold")
+  )
+```
+
