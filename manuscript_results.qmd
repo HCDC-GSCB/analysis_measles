@@ -25,6 +25,7 @@ library(sf)
 library(viridis)
 library(ggspatial)
 library(ggsci)
+library(scales)
 
 # ==========================================
 # 0. CHUẨN BỊ DỮ LIỆU
@@ -134,7 +135,7 @@ wal_age_2425 <- df_2425 %>%
 
 ## 1. Epidemic curves
 
-```{r}
+```{r Figure 1, fig.width=10, fig.height=15, dpi=300}
 timeline_1819 <- data.frame(
   category = factor(c("Time of the outbreak", "Vaccination campaign", "Time from start to peak"),
                     levels = c("Time of the outbreak", "Vaccination campaign", "Time from start to peak")),
@@ -249,7 +250,7 @@ final_plot
 
 ## 2. Cases by are group
 
-```{r}
+```{r Figure 2.1, fig.width=10, fig.height=6, dpi=300}
 age_levels <- c("<1", "1-5", "6-10", "11-15", ">15")
 
 my_colors <- c("<1" = "#4575b4", 
@@ -307,7 +308,7 @@ final_plot <- p_A / p_B +
 final_plot
 ```
 
-```{r}
+```{r Figure 2.2, fig.width=10, fig.height=6, dpi=300}
 age_levels <- c("<1", "1-5", "6-10", "11-15", ">15")
 
 pal_1819 <- c("<1" = "#4575B4",     
@@ -370,7 +371,7 @@ final_plot
 
 ## 3. Cummulative incidence per 100k population
 
-```{r}
+```{r Figure 3, fig.width=10, fig.height=6, dpi=300}
 df_1819 <- df_1819 |> mutate(outbreak = "2018-2020")
 df_2425 <- df_1819 |> mutate(outbreak = "2024-2025")
 
@@ -482,8 +483,10 @@ df_overall <- bind_rows(cori_1819, wal_overall_1819, cori_2425, wal_overall_2425
 
 # 2. Tính số ca bệnh theo ngày cho từng đợt dịch (Giữ nguyên toàn bộ data)
 df_cases <- bind_rows(
-  df_1819 %>% group_by(ngay_nv) %>% summarise(cases = n(), .groups = "drop"),
-  df_2425 %>% group_by(ngay_nv) %>% summarise(cases = n(), .groups = "drop")
+  df_1819 %>% group_by(ngay_nv) %>% summarise(cases = n(), .groups = "drop") %>% 
+    mutate(outbreak = "2018-2020"),
+  df_2425 %>% group_by(ngay_nv) %>% summarise(cases = n(), .groups = "drop") %>% 
+    mutate(outbreak = "2024-2025")
 )
 
 # 3. Tính hệ số chuyển đổi trục Y cho biểu đồ trục kép
